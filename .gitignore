@@ -1,0 +1,30 @@
+# 비밀값 — 절대 커밋 금지
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# 데이터 (원본·정리본 모두 로컬에만)
+data/raw/
+data/clean/
+data/features/
+data/manual/
+
+# 실험 기록
+mlruns/
+mlflow.db
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# 로컬 도구 설정
+.claude/settings.local.json
+.vscode/
+.idea/
