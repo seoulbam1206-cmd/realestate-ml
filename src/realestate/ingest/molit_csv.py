@@ -118,6 +118,33 @@ def normalize_apt_name(s: pd.Series) -> pd.Series:
     return s.fillna("").str.replace(r"\s+", "", regex=True)
 
 
+def add_keys(df: pd.DataFrame) -> pd.DataFrame:
+    """complex_key, trade_key 를 붙인다. CSV·API 어느 쪽에서 와도 같은 거래면 같은 키 (PLAN.md 6-1-2)."""
+    if df.empty:
+        df["complex_key"] = df["trade_key"] = pd.Series(dtype=str)
+        return df
+    loc = df["bjd_cd"].fillna("NM:" + df["sgg_full_nm"])
+    apt = normalize_apt_name(df["apt_nm"])
+    df["complex_key"] = _key(pd.DataFrame({"loc": loc, "bon": df["bonbun"], "bu": df["bubun"], "apt": apt}))
+    base = _key(
+        pd.DataFrame(
+            {
+                "loc": loc, "bon": df["bonbun"], "bu": df["bubun"], "apt": apt,
+                "ar": df["exclu_use_ar"].round(4), "fl": df["floor"], "dong": df["apt_dong"].fillna(""),
+                "dd": df["deal_date"].dt.strftime("%Y%m%d"), "amt": df["deal_amount"],
+            }
+        )
+    )  # fmt: skip
+    # 내용이 똑같은 거래(쌍둥이)는 순번으로 구분. CSV·API 의 행 순서가 달라도 같은 번호가 나오도록
+    # 해제된 것 먼저(해제일 순), 그다음 정상 거래 순으로 번호를 매긴다 (2026-10-29 포항 남구 2026.1 에서 발견)
+    order = pd.DataFrame({"b": base, "c": df["cdeal_day"]}).sort_values(
+        ["b", "c"], na_position="last", kind="stable"
+    )
+    seq = order.groupby("b").cumcount().reindex(df.index)
+    df["trade_key"] = base + "-" + seq.astype(str)
+    return df
+
+
 def parse(meta: CsvMeta, name_to_bjd: dict[str, str], encoding: str = "cp949") -> pd.DataFrame:
     raw = pd.read_csv(
         meta.path, encoding=encoding, skiprows=meta.header_line, dtype=str, keep_default_na=False
@@ -164,19 +191,7 @@ def parse(meta: CsvMeta, name_to_bjd: dict[str, str], encoding: str = "cp949") -
     df["is_canceled"] = df["cdeal_day"].notna()
     df["price_per_m2"] = df["deal_amount"] / df["exclu_use_ar"]  # 만원/㎡
 
-    loc = df["bjd_cd"].fillna("NM:" + df["sgg_full_nm"])
-    apt = normalize_apt_name(df["apt_nm"])
-    df["complex_key"] = _key(pd.DataFrame({"loc": loc, "bon": df["bonbun"], "bu": df["bubun"], "apt": apt}))
-    base = _key(
-        pd.DataFrame(
-            {
-                "loc": loc, "bon": df["bonbun"], "bu": df["bubun"], "apt": apt,
-                "ar": df["exclu_use_ar"].round(4), "fl": df["floor"], "dong": df["apt_dong"].fillna(""),
-                "dd": df["deal_date"].dt.strftime("%Y%m%d"), "amt": df["deal_amount"],
-            }
-        )
-    )  # fmt: skip
-    df["trade_key"] = base + "-" + df.groupby(base).cumcount().astype(str)
+    add_keys(df)
     df["first_seen_at"] = meta.downloaded_at
     df["source_file"] = meta.path.name
     return df

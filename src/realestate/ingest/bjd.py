@@ -34,3 +34,17 @@ def name_lookup(codes: pd.DataFrame) -> dict[str, str]:
         if len(pick) == 1:
             out[name] = pick["bjd_cd"].iloc[0]
     return out
+
+
+def lawd_codes(codes: pd.DataFrame) -> list[str]:
+    """API 조회용 시군구 코드(LAWD_CD) 목록: 지금 존재하는 시군구, 일반구가 있는 시는 구 코드만.
+
+    예: 수원시(41110)는 빼고 장안구(41111)·권선구(41113)... 를 쓴다. 증평군(43745)처럼 코드만 비슷한
+    군은 시가 아니므로 이름("충청북도 영동군 " 으로 시작하는 하위 구가 있는지)으로 판단한다.
+    """
+    sgg = codes[
+        codes["is_active"] & codes["bjd_cd"].str.endswith("00000") & ~codes["sgg_cd"].str.endswith("000")
+    ]
+    names = dict(zip(sgg["sgg_cd"], sgg["full_nm"], strict=True))
+    parents = {c for c, n in names.items() if any(o.startswith(n + " ") for o in names.values())}
+    return sorted(set(names) - parents)

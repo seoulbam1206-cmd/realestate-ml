@@ -9,8 +9,12 @@ molit_apt_trade:
   operation: getRTMSDataSvcAptTradeDev   # MVP 2 첫 호출로 확인
   daily_limit: 1000
   safe_limit: 950
-  num_of_rows: 1000
-  api_from_ym: "202601"                  # 이전 달은 공개시스템 CSV
+  num_of_rows: 1000                      # 2026-10-29 확인: 1000 허용
+  api_from_ym: "202609"                  # 이전 달(2020.1~2026.8)은 공개시스템 CSV (2026-10-29 변경)
+  backfill_months: ["202610", "202609"]  # 최근 달부터
+  backfill_daily_cap: 800                # 백필은 하루 이 횟수(오늘 전체 사용량 기준)까지만 쓰고 멈춤
+  max_retries: 3                         # 실패 시 재시도 횟수 (재시도도 호출 1회로 셈)
+  max_consecutive_fail: 5                # 연속으로 이만큼 실패하면 그날 실행 중단
 
 onbid:
   code:        {base_url: https://apis.data.go.kr/B010003/OnbidCodeSrvc, operations: [getOnbidUsgCodeInfo, getOnbidDtlAddrInfo], daily_limit: 1000}

@@ -92,6 +92,21 @@ def add_api_calls(con: duckdb.DuckDBPyConnection, source: str, calls: int, daily
     ).fetchone()[0]
 
 
+def calls_today(con: duckdb.DuckDBPyConnection, source: str) -> int:
+    row = con.execute(
+        "SELECT calls_used FROM api_quota WHERE day = ? AND source = ?", [datetime.now().date(), source]
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def done_targets(con: duckdb.DuckDBPyConnection, source: str, job_type: str) -> set[str]:
+    rows = con.execute(
+        "SELECT DISTINCT target_key FROM ingest_log WHERE source = ? AND job_type = ? AND status = 'success'",
+        [source, job_type],
+    ).fetchall()
+    return {r[0] for r in rows}
+
+
 def imported_hashes(con: duckdb.DuckDBPyConnection, source: str) -> set[str]:
     rows = con.execute(
         "SELECT file_sha256 FROM ingest_log WHERE source = ? AND status = 'success' AND file_sha256 IS NOT NULL",
