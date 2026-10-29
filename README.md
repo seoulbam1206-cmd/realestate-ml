@@ -11,7 +11,7 @@
 | 단계 | 내용 | 상태 |
 |---|---|---|
 | MVP 1 | R-ONE 지수로 지역 가격 흐름 화면 | ✅ 완료, [공개](https://realestate-ml-fngwt58swfw5hmbaf7jt5t.streamlit.app/) (TiDB 읽기 전용) |
-| MVP 2 | 실거래 수집 파이프라인 (공개시스템 CSV + API) | 예정 |
+| MVP 2 | 실거래 수집 파이프라인 (공개시스템 CSV + API) | 진행 중: CSV 정리본·ingest_log·API 1건 시험 완료 |
 | MVP 3 | 시세 모델, 점수, 백테스트 (LightGBM, MLflow) | 예정 |
 | MVP 4 | 온비드 공매 연동, FastAPI | 예정 |
 | MVP 5 | 스케줄, 재학습, 모니터링, Docker | 예정 |
@@ -26,6 +26,7 @@
 ```powershell
 uv sync                                     # 가상환경·패키지 설치 (Python 3.12)
 uv run python scripts/build_rone.py         # data/raw 의 R-ONE CSV → data/clean/rone/*.parquet
+uv run python scripts/import_molit_csv.py   # data/raw/molit_csv 의 실거래 CSV → data/clean/molit/apt_trade/ym=YYYYMM/
 uv run streamlit run app/Home.py            # http://localhost:8501
 uv run pytest                               # 테스트
 ```

@@ -4,6 +4,7 @@ altair==6.3.0
     # via streamlit
 anyio==4.15.1
     # via
+    #   httpx
     #   starlette
     #   streamlit
 attrs==26.1.0
@@ -12,6 +13,8 @@ attrs==26.1.0
     #   referencing
 certifi==2026.10.23
     # via
+    #   httpcore
+    #   httpx
     #   realestate-ml
     #   requests
 charset-normalizer==3.5.2
@@ -20,11 +23,20 @@ click==8.5.0
     # via
     #   streamlit
     #   uvicorn
+duckdb==2.0.0
+    # via realestate-ml
 h11==0.16.0
-    # via uvicorn
+    # via
+    #   httpcore
+    #   uvicorn
+httpcore==1.0.9
+    # via httpx
+httpx==0.28.1
+    # via realestate-ml
 idna==3.20
     # via
     #   anyio
+    #   httpx
     #   requests
 itsdangerous==2.2.0
     # via streamlit

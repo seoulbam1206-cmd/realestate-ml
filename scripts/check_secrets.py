@@ -20,6 +20,8 @@ FORBIDDEN_PATHS = (
     re.compile(r"secrets\.toml$"),
     re.compile(r"^data/(raw|clean)/"),
 )
+# .env 에 있지만 비밀이 아닌 설정 (DB 이름 등은 코드·문서에 정상적으로 나온다)
+NOT_SECRET = {"TIDB_DATABASE", "TIDB_PORT"}
 PATTERNS = (
     re.compile(r"serviceKey=[A-Za-z0-9%+/=]{20,}"),
     re.compile(r"(?i)(password|passwd|secret|api_key)\s*[=:]\s*['\"][^'\"\s]{8,}['\"]"),
@@ -33,8 +35,9 @@ def env_values() -> list[str]:
     values = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if "=" in line and not line.lstrip().startswith("#"):
-            v = line.split("=", 1)[1].strip().strip("'\"")
-            if len(v) >= 8:
+            name, v = (x.strip() for x in line.split("=", 1))
+            v = v.strip("'\"")
+            if name not in NOT_SECRET and len(v) >= 8:
                 # 공공데이터포털 키는 인코딩/디코딩 두 형태가 있어 둘 다 찾는다
                 values += list({v, quote(v, safe=""), unquote(v)})
     return values

@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 .streamlit/secrets.toml
+.streamlit/secrets.toml.*
+!.streamlit/secrets.toml.example
+*.bak
 
 # 데이터 (원본·정리본 모두 로컬에만)
 data/raw/

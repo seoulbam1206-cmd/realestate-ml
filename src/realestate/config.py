@@ -12,6 +12,12 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA_RAW = ROOT / "data" / "raw"
 DATA_CLEAN = ROOT / "data" / "clean"
 RONE_CLEAN = DATA_CLEAN / "rone"
+MOLIT_CSV_RAW = DATA_RAW / "molit_csv"
+MOLIT_API_RAW = DATA_RAW / "molit" / "apt_trade"
+APT_TRADE_CLEAN = DATA_CLEAN / "molit" / "apt_trade"
+REFERENCE_CLEAN = DATA_CLEAN / "reference"
+BJD_RAW = DATA_RAW / "법정동코드 전체자료.txt"
+INGEST_DB = DATA_CLEAN / "ingest.duckdb"
 
 
 @lru_cache
