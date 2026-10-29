@@ -2,13 +2,15 @@
 
 > **공공 자료를 가공한 것이며 투자 조언이 아닙니다.** 개인 포트폴리오용 데모입니다.
 
+**🔗 데모: https://realestate-ml-fngwt58swfw5hmbaf7jt5t.streamlit.app/**
+
 전국 아파트 가격이 어디서 얼마나 내려왔는지 추적하고, 모델 시세 대비 저평가 지역·공매 물건을 찾는 ML 프로젝트입니다.
 전체 계획은 [PLAN.md](PLAN.md), 데이터 확인 기록은 [DATA_CHECK.md](DATA_CHECK.md)에 있습니다.
 
 ## 진행 상황
 | 단계 | 내용 | 상태 |
 |---|---|---|
-| MVP 1 | R-ONE 지수로 지역 가격 흐름 화면 | ✅ 로컬 완료, 공개 준비 |
+| MVP 1 | R-ONE 지수로 지역 가격 흐름 화면 | ✅ 완료, [공개](https://realestate-ml-fngwt58swfw5hmbaf7jt5t.streamlit.app/) (TiDB 읽기 전용) |
 | MVP 2 | 실거래 수집 파이프라인 (공개시스템 CSV + API) | 예정 |
 | MVP 3 | 시세 모델, 점수, 백테스트 (LightGBM, MLflow) | 예정 |
 | MVP 4 | 온비드 공매 연동, FastAPI | 예정 |
