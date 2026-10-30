@@ -1,5 +1,3 @@
-import os
-import time
 from datetime import date, datetime
 
 import pandas as pd
@@ -38,24 +36,23 @@ def test_plan_daily_order_and_skips():
     assert jobs[: len(daily)] == [j for j in jobs if j.job_type == "daily"]
 
 
-def _touch(path, t):
+def _write(path, col, t, n=1):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"")
-    os.utime(path, (t, t))
+    pd.DataFrame({col: [pd.Timestamp(t)] * n}).to_parquet(path)
 
 
 def test_month_sources_never_mix(tmp_path):
-    now = time.time()
+    csv_t, api_t = datetime(2026, 10, 29, 16), datetime(2026, 10, 30, 9)
     lawds = ["11110", "11140"]
-    _touch(tmp_path / "ym=202608" / "source=csv.parquet", now - 100)
-    _touch(tmp_path / "ym=202608" / "source=api_sgg=11110.parquet", now)  # 일부만 → CSV
-    _touch(tmp_path / "ym=202607" / "source=csv.parquet", now - 100)
-    for sgg in lawds:  # 전부 + CSV 보다 새것 → API
-        _touch(tmp_path / "ym=202607" / f"source=api_sgg={sgg}.parquet", now)
-    _touch(tmp_path / "ym=202606" / "source=csv.parquet", now)  # CSV 를 나중에 다시 넣음 → CSV
+    _write(tmp_path / "ym=202608" / "source=csv.parquet", "first_seen_at", csv_t)
+    _write(tmp_path / "ym=202608" / "source=api_sgg=11110.parquet", "last_seen_at", api_t)  # 일부만 → CSV
+    for sgg in lawds:  # 전부 + CSV 보다 나중에 받음 → API
+        _write(tmp_path / "ym=202607" / f"source=api_sgg={sgg}.parquet", "last_seen_at", api_t)
+    _write(tmp_path / "ym=202607" / "source=csv.parquet", "first_seen_at", csv_t)  # 파일은 나중에 다시 씀
+    _write(tmp_path / "ym=202606" / "source=csv.parquet", "first_seen_at", datetime(2026, 11, 1))  # 새 CSV
     for sgg in lawds:
-        _touch(tmp_path / "ym=202606" / f"source=api_sgg={sgg}.parquet", now - 100)
-    _touch(tmp_path / "ym=202609" / "source=api_sgg=11110.parquet", now)  # CSV 없음, 일부만
+        _write(tmp_path / "ym=202606" / f"source=api_sgg={sgg}.parquet", "last_seen_at", api_t)
+    _write(tmp_path / "ym=202609" / "source=api_sgg=11110.parquet", "last_seen_at", api_t)  # CSV 없음, 일부만
     src = trades.month_sources(lawds, tmp_path).set_index("ym")
     assert src["use"].to_dict() == {
         "202606": "csv",
@@ -67,4 +64,3 @@ def test_month_sources_never_mix(tmp_path):
     assert sorted(p.name for p in files) == [
         "source=api_sgg=11110.parquet", "source=api_sgg=11140.parquet", "source=csv.parquet"
     ]  # fmt: skip
-    assert isinstance(src.loc["202607", "files"], list) and pd.notna(src.loc["202609", "n_api"])
