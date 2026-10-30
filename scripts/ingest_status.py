@@ -1,4 +1,4 @@
-"""ingest_log 로 수집 진행 상황 보기: 하루 호출 수, 월별 진행률, 최근 실패.
+"""ingest_log 로 수집 진행 상황 보기: 하루 호출 수, 월별 진행률, 매일 이어받기·점검 현황, 최근 실패.
 
 실행: uv run python scripts/ingest_status.py [--months 202610 202609]
 """
@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date, datetime, timedelta
 
 from realestate.config import BJD_RAW, sources
-from realestate.ingest import bjd
+from realestate.ingest import bjd, trades
 from realestate.ingest import log as ingest_log
+from realestate.ingest.molit_jobs import API_JOB_TYPES, shift_ym
 
 SOURCE = "molit_api"
 
@@ -21,7 +23,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--months", nargs="+", default=cfg["backfill_months"])
     args = parser.parse_args()
-    n_sgg = len(bjd.lawd_codes(bjd.load(BJD_RAW)))
+    lawds = bjd.lawd_codes(bjd.load(BJD_RAW))
+    n_sgg = len(lawds)
 
     with ingest_log.connect() as con:
         print("■ 하루 호출 수 (api_quota)")
@@ -67,6 +70,8 @@ def main() -> None:
                 f"한도멈춤 {r['한도멈춤']}, 받은 거래 {r['건수']:,}건 (해제 {r['해제']:,})"
             )
 
+        print_recent_months(con, lawds, cfg)
+
         print("\n■ 실행별 요약 (API)")
         print(
             con.execute(
@@ -107,6 +112,27 @@ def main() -> None:
             """
         ).fetchone()
         print(f"\n■ CSV 정리본: {csv[0]}개월 ({csv[2][3:]}~{csv[3][3:]}), {csv[1]:,}건" if csv[0] else "")
+
+
+def print_recent_months(con, lawds: list[str], cfg: dict) -> None:
+    """최근 13개월: 며칠 안에 받은 시군구 수, 마지막 수집일, 정리본을 읽을 때 쓰는 출처."""
+    today = date.today()
+    this_ym = f"{today:%Y%m}"
+    rot_from, rot_to = cfg["rotate_months"]
+    every = cfg["rotate_every_days"]
+    fresh_after = datetime.combine(today - timedelta(days=every - 1), datetime.min.time())
+    last_ok = ingest_log.last_success(con, SOURCE, API_JOB_TYPES)
+    use = trades.month_sources(lawds).set_index("ym")["use"].to_dict()
+    print(f"\n■ 매일 이어받기·점검 (이번 달·지난달 매일, {rot_from}~{rot_to}개월 전 {every}일마다)")
+    for k in range(rot_to + 1):
+        ym = shift_ym(this_ym, -k)
+        times = [t for sgg in lawds if (t := last_ok.get(f"sgg={sgg},ym={ym}"))]
+        if k < rot_from:
+            label = f"매일 · 오늘 받음 {sum(t.date() == today for t in times)}/{len(lawds)}"
+        else:
+            label = f"점검 · {every}일 안에 받음 {sum(t >= fresh_after for t in times)}/{len(lawds)}"
+        last = f"마지막 {max(times):%m-%d %H:%M}" if times else "API 없음"
+        print(f"  {ym}: {label:<24} {last:<16} 읽는 출처 {use.get(ym, '-')}")
 
 
 if __name__ == "__main__":

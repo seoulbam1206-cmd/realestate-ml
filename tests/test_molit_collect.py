@@ -119,18 +119,47 @@ def test_cdeal_day_formats():
 
 def test_save_clean_diff(tmp_path, monkeypatch):
     monkeypatch.setattr(molit_collect, "APT_TRADE_CLEAN", tmp_path)
-    t0, t1 = datetime(2026, 10, 1), datetime(2026, 10, 29)
+    molit_collect._csv_month.cache_clear()
+    t0, t1, t2 = datetime(2026, 10, 1), datetime(2026, 10, 29), datetime(2026, 10, 30)
     first = molit_api.to_clean([_item("1"), _item("2")], t0, {})
-    assert molit_collect.save_clean(first, "11110", "202609") == {
-        "rows_new": 2,
-        "rows_removed": 0,
-        "rows_canceled": 0,
-    }
+    counts, changes = molit_collect.save_clean(first, "11110", "202609")
+    assert counts == {"rows_new": 2, "rows_removed": 0, "rows_missing": 0, "rows_canceled": 0}
+    assert changes.empty  # 이전 묶음이 없으면 변화로 기록하지 않음
+    # 1일 거래 해제, 2일 거래 안 보임(1번째), 3일 거래 새로 생김
     second = molit_api.to_clean([_item("1", cdealType="O", cdealDay="26.10.20"), _item("3")], t1, {})
-    counts = molit_collect.save_clean(second, "11110", "202609")
-    assert counts == {"rows_new": 1, "rows_removed": 1, "rows_canceled": 1}
+    counts, changes = molit_collect.save_clean(second, "11110", "202609")
+    assert counts == {"rows_new": 1, "rows_removed": 0, "rows_missing": 1, "rows_canceled": 1}
+    assert sorted(changes["change_type"]) == ["canceled", "new"]
     saved = pd.read_parquet(molit_collect.clean_path("11110", "202609"))
+    assert len(saved) == 3 and saved.loc[saved["deal_date"].dt.day == 2, "missing_count"].iloc[0] == 1
     assert saved.loc[saved["deal_date"].dt.day == 1, "first_seen_at"].iloc[0] == pd.Timestamp(t0)
+    # 2일 거래가 두 번 연속 안 보이면 확정 → 빠지고 removed
+    counts, changes = molit_collect.save_clean(second.copy(), "11110", "202609")
+    assert counts["rows_removed"] == 1 and changes["change_type"].tolist() == ["removed"]
+    assert len(pd.read_parquet(molit_collect.clean_path("11110", "202609"))) == 2
+    # 다시 나타나면 missing_count 0 으로 돌아옴
+    back = molit_api.to_clean([_item("1"), _item("2")], t2, {})
+    first_again = molit_api.to_clean([_item("2")], t2, {})
+    molit_collect.save_clean(back, "11140", "202609")
+    molit_collect.save_clean(first_again, "11140", "202609")
+    molit_collect.save_clean(back, "11140", "202609")
+    assert pd.read_parquet(molit_collect.clean_path("11140", "202609"))["missing_count"].tolist() == [0, 0]
+
+
+def test_first_api_month_compares_with_csv_rows(tmp_path, monkeypatch):
+    """CSV 로 받은 달을 처음 API 로 받으면 같은 시군구 CSV 행과 비교 (처음 본 시각 유지, 늦은 신고는 new)."""
+    monkeypatch.setattr(molit_collect, "APT_TRADE_CLEAN", tmp_path)
+    molit_collect._csv_month.cache_clear()
+    csv_rows = molit_api.to_clean([_item("1"), _item("2")], datetime(2026, 10, 29), {})
+    csv_rows["source"] = "csv"
+    other = csv_rows.assign(sgg_cd="11140")  # 다른 시군구 행은 비교에 안 들어감
+    (tmp_path / "ym=202609").mkdir()
+    pd.concat([csv_rows, other]).to_parquet(tmp_path / "ym=202609" / "source=csv.parquet")
+    api = molit_api.to_clean([_item("1"), _item("2"), _item("9")], datetime(2026, 10, 30), {})
+    counts, changes = molit_collect.save_clean(api, "11110", "202609")
+    assert counts["rows_new"] == 1 and changes["change_type"].tolist() == ["new"]
+    saved = pd.read_parquet(molit_collect.clean_path("11110", "202609"))
+    assert (saved.loc[saved["deal_date"].dt.day < 9, "first_seen_at"] == pd.Timestamp(2026, 10, 29)).all()
 
 
 def test_lawd_codes_drop_parent_city_only():

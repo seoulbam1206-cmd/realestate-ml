@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
 import duckdb
@@ -131,30 +132,71 @@ def clean_path(lawd_cd: str, deal_ymd: str) -> Path:
     return APT_TRADE_CLEAN / f"ym={deal_ymd}" / f"source=api_sgg={lawd_cd}.parquet"
 
 
-def diff_counts(old: pd.DataFrame | None, new: pd.DataFrame) -> dict[str, int]:
-    """이전 묶음과 비교: 새로 생김 / 해제로 바뀜 / 없어짐 (PLAN.md 6-1-4 ④)."""
-    if old is None or old.empty:
-        return {"rows_new": len(new), "rows_removed": 0, "rows_canceled": int(new["is_canceled"].sum())}
-    old_keys, new_keys = set(old["trade_key"]), set(new["trade_key"])
-    was_canceled = set(old.loc[old["is_canceled"], "trade_key"])
-    now_canceled = set(new.loc[new["is_canceled"], "trade_key"])
-    return {
-        "rows_new": len(new_keys - old_keys),
-        "rows_removed": len(old_keys - new_keys),
-        "rows_canceled": len(now_canceled - was_canceled),
-    }
+MISSING_CONFIRM = 2  # 이전엔 있던 거래가 이만큼 연속으로 안 보이면 없어진 것으로 확정 (PLAN.md 6-1-4 ④)
 
 
-def save_clean(df: pd.DataFrame, lawd_cd: str, deal_ymd: str) -> dict[str, int]:
+@lru_cache(maxsize=2)
+def _csv_month(deal_ymd: str) -> pd.DataFrame | None:
+    path = APT_TRADE_CLEAN / f"ym={deal_ymd}" / "source=csv.parquet"
+    return pd.read_parquet(path) if path.exists() else None
+
+
+def previous_rows(lawd_cd: str, deal_ymd: str) -> pd.DataFrame | None:
+    """비교 기준이 되는 이전 묶음: API 정리본이 있으면 그것, 처음 받는 달이면 같은 시군구의 CSV 행."""
     path = clean_path(lawd_cd, deal_ymd)
-    old = pd.read_parquet(path) if path.exists() else None
-    if old is not None and len(df):
-        # 전에 본 거래는 처음 본 시각을 유지
+    if path.exists():
+        return pd.read_parquet(path)
+    csv = _csv_month(deal_ymd)
+    return None if csv is None else csv[csv["sgg_cd"] == lawd_cd]
+
+
+def merge_with_previous(
+    new: pd.DataFrame, old: pd.DataFrame | None
+) -> tuple[pd.DataFrame, dict[str, int], pd.DataFrame]:
+    """새 묶음 + 이전 묶음 → (저장할 표, 건수, 바뀐 거래 목록).
+
+    - 전에 본 거래는 처음 본 시각(first_seen_at)을 유지
+    - 이번에 안 보인 거래는 바로 지우지 않고 missing_count 를 1 올려 남긴다. MISSING_CONFIRM 번 연속이면 뺀다
+    - 바뀐 거래: new(새로 생김) / canceled(해제로 바뀜) / removed(없어짐 확정). 이전 묶음이 없으면 기록하지 않음
+    """
+    new = new.copy()
+    new["missing_count"] = 0
+    if old is None or old.empty:
+        counts = {"rows_new": len(new), "rows_removed": 0, "rows_missing": 0,
+                  "rows_canceled": int(new["is_canceled"].sum())}  # fmt: skip
+        return new, counts, pd.DataFrame(columns=["trade_key", "change_type"])
+    if len(new):
         first = old.set_index("trade_key")["first_seen_at"]
-        df["first_seen_at"] = df["trade_key"].map(first).fillna(df["first_seen_at"])
-    counts = diff_counts(old, df)
+        new["first_seen_at"] = new["trade_key"].map(first).fillna(new["first_seen_at"])
+
+    new_keys = set(new["trade_key"])
+    gone = old[~old["trade_key"].isin(new_keys)].copy()
+    prev_missing = gone["missing_count"] if "missing_count" in gone else pd.Series(0, index=gone.index)
+    gone["missing_count"] = prev_missing.fillna(0).astype(int) + 1
+    confirmed = gone[gone["missing_count"] >= MISSING_CONFIRM]
+    carry = gone[gone["missing_count"] < MISSING_CONFIRM]
+
+    was_canceled = set(old.loc[old["is_canceled"], "trade_key"])
+    added = new_keys - set(old["trade_key"])
+    canceled = set(new.loc[new["is_canceled"], "trade_key"]) - was_canceled
+    changes = pd.DataFrame(
+        [(k, "new") for k in sorted(added)]
+        + [(k, "canceled") for k in sorted(canceled)]
+        + [(k, "removed") for k in confirmed["trade_key"]],
+        columns=["trade_key", "change_type"],
+    )
+    out = pd.concat([new, carry], ignore_index=True) if len(carry) else new
+    out["missing_count"] = out["missing_count"].astype("int8")
+    counts = {"rows_new": len(added), "rows_removed": len(confirmed), "rows_missing": len(carry),
+              "rows_canceled": len(canceled)}  # fmt: skip
+    return out, counts, changes
+
+
+def save_clean(df: pd.DataFrame, lawd_cd: str, deal_ymd: str) -> tuple[dict[str, int], pd.DataFrame]:
+    out, counts, changes = merge_with_previous(df, previous_rows(lawd_cd, deal_ymd))
+    path = clean_path(lawd_cd, deal_ymd)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    df.to_parquet(tmp, index=False, compression="zstd")
+    out.to_parquet(tmp, index=False, compression="zstd")
     tmp.replace(path)
-    return counts
+    return counts, changes

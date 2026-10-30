@@ -13,6 +13,9 @@ molit_apt_trade:
   api_from_ym: "202609"                  # 이전 달(2020.1~2026.8)은 공개시스템 CSV (2026-10-29 변경)
   backfill_months: ["202610", "202609"]  # 최근 달부터
   backfill_daily_cap: 800                # 백필은 하루 이 횟수(오늘 전체 사용량 기준)까지만 쓰고 멈춤
+  daily_cap: 800                         # 매일 이어받기도 하루 이 횟수(오늘 전체 사용량 기준)까지만
+  rotate_months: [2, 12]                 # 2~12개월 전은 돌아가며 점검 (이번 달·지난달은 매일)
+  rotate_every_days: 14                  # 점검 달은 이 일수마다 한 번씩 다시 받음
   max_retries: 3                         # 실패 시 재시도 횟수 (재시도도 호출 1회로 셈)
   max_consecutive_fail: 5                # 연속으로 이만큼 실패하면 그날 실행 중단
 

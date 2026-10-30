@@ -31,3 +31,6 @@ dist/
 .claude/settings.local.json
 .vscode/
 .idea/
+
+# 실행 기록
+logs/

@@ -52,6 +52,16 @@ CREATE TABLE IF NOT EXISTS api_quota (
     daily_limit INTEGER NOT NULL,
     PRIMARY KEY (day, source)
 );
+-- 거래 단위 변화 기록 (PLAN.md 5-2 apt_trade_change). 이전 묶음이 있을 때만 남긴다
+CREATE TABLE IF NOT EXISTS apt_trade_change (
+    trade_key   VARCHAR NOT NULL,
+    sgg_cd      VARCHAR NOT NULL,
+    ym          VARCHAR NOT NULL,
+    change_type VARCHAR NOT NULL,      -- new / canceled / removed
+    detected_at TIMESTAMP NOT NULL,
+    run_id      VARCHAR NOT NULL
+);
+ALTER TABLE ingest_log ADD COLUMN IF NOT EXISTS rows_missing INTEGER;  -- 이번에 안 보인 거래 (확정 전)
 """
 
 
@@ -105,6 +115,35 @@ def done_targets(con: duckdb.DuckDBPyConnection, source: str, job_type: str) -> 
         [source, job_type],
     ).fetchall()
     return {r[0] for r in rows}
+
+
+def last_success(
+    con: duckdb.DuckDBPyConnection, source: str, job_types: tuple[str, ...]
+) -> dict[str, datetime]:
+    """target_key → 마지막 성공 시각 (여러 job_type 을 합쳐서)."""
+    marks = ", ".join("?" for _ in job_types)
+    rows = con.execute(
+        f"SELECT target_key, max(finished_at) FROM ingest_log "
+        f"WHERE source = ? AND status = 'success' AND job_type IN ({marks}) GROUP BY 1",
+        [source, *job_types],
+    ).fetchall()
+    return dict(rows)
+
+
+def write_changes(
+    con: duckdb.DuckDBPyConnection, changes: pd.DataFrame, sgg_cd: str, ym: str, run_id: str
+) -> None:
+    if changes.empty:
+        return
+    df = changes[["trade_key", "change_type"]].assign(
+        sgg_cd=sgg_cd, ym=ym, detected_at=datetime.now(), run_id=run_id
+    )
+    with con.cursor() as cur:  # 같은 연결의 앞선 INSERT 결과가 남아 있어도 막히지 않게 별도 커서
+        cur.register("_changes", df)
+        cur.execute(
+            "INSERT INTO apt_trade_change "
+            "SELECT trade_key, sgg_cd, ym, change_type, detected_at, run_id FROM _changes"
+        )
 
 
 def imported_hashes(con: duckdb.DuckDBPyConnection, source: str) -> set[str]:

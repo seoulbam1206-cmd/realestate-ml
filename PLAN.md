@@ -369,7 +369,8 @@ GRANT SELECT ON realestate_public.* TO '<접두사>.web_ro'@'%';
 별도 `api_quota` 표: date, source, calls_used, daily_limit → 남은 호출 수 계산.
 - 호출 **전에** `api_quota`를 보고 상한에 닿았으면 부르지 않음. 재시도·실패한 호출도 1회로 셈
 - 진행 상황 보기: `uv run python scripts/ingest_status.py` → 하루 호출 수, 월별 완료/실패/한도멈춤, 실행별 호출·재시도 수, 최근 실패
-- `job_type` 실제 값: `csv_import`(CSV), `probe`(시험 호출), `backfill`(API 백필). `daily`·`catchup`은 MVP 2 다음 단계
+- `job_type` 실제 값: `csv_import`(CSV), `probe`(시험 호출), `backfill`(API 백필), `daily`(이번 달·지난달 매일), `rotate`(2~12개월 전 2주마다 점검). `catchup`은 따로 두지 않음 → `rotate`가 "14일 넘게 안 받은 것"을 오래된 순으로 고르므로 꺼져 있던 기간도 자동으로 따라잡음
+- `rows_missing`: 이번에 안 보인 거래 수 (확정 전). `apt_trade_change` 표(DuckDB): trade_key, sgg_cd, ym, change_type(`new`/`canceled`/`removed`), detected_at, run_id
 
 ---
 
@@ -504,6 +505,15 @@ GRANT SELECT ON realestate_public.* TO '<접두사>.web_ro'@'%';
 - **실패 재시도**: 네트워크·5xx 오류 → 3번까지 재시도(2초, 8초, 30초 대기). 한도 초과 코드 → 즉시 멈추고 `quota_stop`, 다음 날 이어서. 인증 오류 → 멈추고 알림(로그+화면 상태)
 - **호출 수 세기**: 재시도·페이지 호출도 1회로 셈. 하루 950회에 닿으면 새 작업을 시작하지 않음 (50회는 비상용)
 - **보안**: 키는 `.env`에서만 읽음. 로그·raw 파일명·에러 메시지에 요청 URL 전체를 남기지 않음(키가 쿼리에 포함되므로)
+
+**구현 (2026-10-30)**: `scripts/daily_molit_api.py` (작업 스케줄러는 `scripts/run_daily.cmd` → `logs/molit_daily.log`)
+- 하루 상한 **800회**(`daily_cap`, 오늘 전체 사용량 기준). 위 표의 950회 대신 백필과 같은 800회로 맞춤 (200회 여유)
+- 순서: `daily`(이번 달 → 지난달, 오늘 이미 성공한 것은 건너뜀) → `rotate`(마지막 성공이 14일 전 이전이거나 없는 (시군구, 월). 안 받은 것 → 오래전에 받은 것, 같으면 최근 달부터). 상한에 닿으면 `quota_stop` 남기고 정상 종료, 남은 몫은 다음 날
+- 실제 사용량: daily 약 515회 → rotate 약 285회/일. 처음 한 번은 2~12개월 전 2,816작업이 모두 대상이라 약 10일에 걸쳐 채워지고, 그 뒤로는 각 달이 14일마다 갱신
+- 저장: (시군구, 월) 통째로 교체. 비교 기준은 이전 API 묶음, 없으면(CSV로만 받았던 달) **같은 시군구의 CSV 행** → 늦은 신고가 `new`로 잡히고 처음 본 시각(`first_seen_at`)은 CSV 다운로드 시각 유지
+- 없어진 거래: 1번 안 보이면 `missing_count=1`로 남김, **2번 연속이면 빼고 `removed`** 기록. 다시 보이면 0으로 돌아옴
+- 읽기 규칙 (`realestate.ingest.trades`): 한 달 안에서 CSV·API를 섞지 않음. 그 달 API가 전체 시군구를 다 갖고 있고 CSV 파일보다 새것이면 API, 아니면 CSV
+- 종료 코드: 0 정상(상한 멈춤 포함), 1 실패 작업 있음(다음 날 자동 재시도), 2 키·권한 문제(직접 확인)
 
 ### 6-2. 온비드 (승인 후 확인 절차)
 | 서비스 | 쓰는 곳 | 한도 | 하루 예상 호출 |
