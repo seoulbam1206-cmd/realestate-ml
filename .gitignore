@@ -34,3 +34,6 @@ dist/
 
 # 실행 기록
 logs/
+
+# 모델 예측·기록 (로컬)
+data/models/
