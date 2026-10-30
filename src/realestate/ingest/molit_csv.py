@@ -12,6 +12,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -114,12 +115,27 @@ def _key(parts: pd.DataFrame) -> pd.Series:
     return joined.map(lambda x: hashlib.sha1(x.encode("utf-8")).hexdigest()[:16])
 
 
+@lru_cache(maxsize=4096)
+def _in_ks_x_1001(ch: str) -> bool:
+    # euc_kr 코덱은 KS X 1001 에 없는 음절을 8바이트 자모 조합으로 바꿔 주므로 길이로 판단
+    return len(ch.encode("euc_kr", "replace")) <= 2
+
+
 def normalize_apt_name(s: pd.Series) -> pd.Series:
-    return s.fillna("").str.replace(r"\s+", "", regex=True)
+    """키용 단지명: 공백 제거 + KS X 1001(완성형 2,350자) 밖 글자는 '?'.
+
+    CSV 는 CP949 파일이지만 '더샾' 이 '더?' 로 온다 → 실제로는 완성형 범위만 씀 (2026-10-30 확인).
+    """
+    s = s.fillna("").str.replace(r"\s+", "", regex=True)
+    return s.map(lambda x: "".join(c if _in_ks_x_1001(c) else "?" for c in x))
 
 
 def add_keys(df: pd.DataFrame) -> pd.DataFrame:
-    """complex_key, trade_key 를 붙인다. CSV·API 어느 쪽에서 와도 같은 거래면 같은 키 (PLAN.md 6-1-2)."""
+    """complex_key, trade_key 를 붙인다. CSV·API 어느 쪽에서 와도 같은 거래면 같은 키 (PLAN.md 6-1-2).
+
+    동(apt_dong)은 키에 넣지 않는다: 신고 뒤에 채워지는 값이라 넣으면 같은 거래의 키가 바뀐다
+    (2026-10-30 2026.8 겹침 검증에서 CSV 빈칸 / 하루 뒤 API "102동" 431건).
+    """
     if df.empty:
         df["complex_key"] = df["trade_key"] = pd.Series(dtype=str)
         return df
@@ -130,7 +146,7 @@ def add_keys(df: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame(
             {
                 "loc": loc, "bon": df["bonbun"], "bu": df["bubun"], "apt": apt,
-                "ar": df["exclu_use_ar"].round(4), "fl": df["floor"], "dong": df["apt_dong"].fillna(""),
+                "ar": df["exclu_use_ar"].round(4), "fl": df["floor"],
                 "dd": df["deal_date"].dt.strftime("%Y%m%d"), "amt": df["deal_amount"],
             }
         )

@@ -182,3 +182,12 @@ def test_twin_trades_get_same_key_in_any_order():
 def test_to_clean_zero_items():
     df = molit_api.to_clean([], datetime(2026, 10, 29), {})
     assert df.empty and "trade_key" in df.columns
+
+
+def test_trade_key_ignores_dong_and_cp949_name():
+    """동은 신고 뒤 채워지고, CSV는 EUC-KR 범위라 '샾'을 '?'로 준다 → 둘 다 같은 키여야 함 (2026.8 겹침 검증)."""
+    t = datetime(2026, 10, 30)
+    a = molit_api.to_clean([_item(aptNm="더샾레이크사이드", aptDong="")], t, {})
+    b = molit_api.to_clean([_item(aptNm="더?레이크사이드", aptDong="102동")], t, {})
+    assert a.loc[0, "trade_key"] == b.loc[0, "trade_key"]
+    assert a.loc[0, "complex_key"] == b.loc[0, "complex_key"]
