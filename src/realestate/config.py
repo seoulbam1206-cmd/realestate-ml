@@ -11,6 +11,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 DATA_RAW = ROOT / "data" / "raw"
 DATA_CLEAN = ROOT / "data" / "clean"
+DATA_FEATURES = ROOT / "data" / "features"
 RONE_CLEAN = DATA_CLEAN / "rone"
 MOLIT_CSV_RAW = DATA_RAW / "molit_csv"
 MOLIT_API_RAW = DATA_RAW / "molit" / "apt_trade"
