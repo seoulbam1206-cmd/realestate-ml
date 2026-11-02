@@ -135,7 +135,12 @@ def labels(final: pd.DataFrame, survey: pd.DataFrame, t: str, h: int, last_month
         out.index.name = "sgg_cd"
         out = out.reset_index()
     piv = survey.pivot(index="sgg_cd", columns="ym", values="value")
-    get = lambda k: piv[shift(t, k)] if shift(t, k) in piv else pd.Series(np.nan, index=piv.index)  # noqa: E731
+    # 조사 지수도 last_month 를 넘는 달은 안 읽음 (튜닝 정답이 평가 기간 지수를 쓰지 않게)
+    get = lambda k: (  # noqa: E731
+        piv[shift(t, k)]
+        if shift(t, k) in piv and shift(t, k) <= last_month
+        else pd.Series(np.nan, index=piv.index)
+    )
     s = pd.DataFrame({f"s_ret{h}": np.log(get(h + 1)) - np.log(get(1))})
     if h == 12:
         s["mdd"] = pd.concat([np.log(get(k)) - np.log(get(-1)) for k in range(12)], axis=1).min(

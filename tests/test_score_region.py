@@ -191,3 +191,33 @@ def test_labels_need_complete_window(monkeypatch):
     assert lab["R12"].notna().all()
     lab = region.labels(final, sv, "202509", 12, "202609")  # W1 끝 = 2026.11 > 2026.9
     assert lab["R12"].isna().all()
+
+
+def test_labels_survey_stops_at_last_month():
+    tr, sv = _trades(), _survey()
+    final = tr[["sgg_cd", "complex_key", "band", "ym", "lp"]]
+    lab = region.labels(final, sv, T, 12, "202512")  # 지수 2025.4 (T+13) 까지 씀
+    assert lab["s_ret12"].notna().all() and lab["mdd"].notna().all()
+    lab = region.labels(final, sv, T, 12, "202503")  # T+13 = 2025.4 > 2025.3
+    assert lab["s_ret12"].isna().all() and lab["mdd"].notna().all()  # mdd 는 T+11 = 2025.2 까지
+    lab = region.labels(final, sv, T, 12, "202501")
+    assert lab["mdd"].isna().all()
+
+
+def test_labels_partial_survey_window_is_blank_not_shorter():
+    """튜닝 끝 2023.12: T=2023.4 의 12개월 지수 수익률 (2024.5 필요)·최대 하락 (2024.3 까지 필요) 은 짧게 계산하지 않고 빈칸."""
+    sv = _survey()
+    final = _trades()[["sgg_cd", "complex_key", "band", "ym", "lp"]]
+    lab = region.labels(final, sv, "202304", 12, "202312")
+    assert lab["s_ret12"].isna().all() and lab["mdd"].isna().all()
+    six = region.labels(final, sv, "202304", 6, "202312")
+    assert six["s_ret6"].notna().all()  # 6개월은 2023.11 까지라 있음
+    # 경계: 최대 하락은 T+11 이 있어야, 12개월 수익률은 T+13 이 있어야 값이 생김
+    assert region.labels(final, sv, "202304", 12, "202402")["mdd"].isna().all()
+    assert region.labels(final, sv, "202304", 12, "202403")["mdd"].notna().all()
+    assert region.labels(final, sv, "202304", 12, "202404")["s_ret12"].isna().all()
+    full = region.labels(final, sv, "202304", 12, "202405")
+    assert full["s_ret12"].notna().all()
+    piv = sv.pivot(index="sgg_cd", columns="ym", values="value")
+    want = (np.log(piv.loc[:, "202304":"202403"]).sub(np.log(piv["202303"]), axis=0)).min(axis=1)
+    assert full.set_index("sgg_cd")["mdd"].to_numpy() == pytest.approx(want.to_numpy())
