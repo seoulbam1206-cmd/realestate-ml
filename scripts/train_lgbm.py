@@ -5,6 +5,8 @@
 - backtest: 고정 설정으로 평가 T 2024.1~2025.9 (기준일 7개) + 확인 T 2025.10~2026.8 (4개, 참고).
         기준일 하나 = 프로세스 하나 (anchor 명령). 같은 설정·같은 기간의 평가가 MLflow 에 이미 있으면 거부.
         --periods eval 이면 평가 기준일만 실행·기록 (확인은 나중에 따로)
+- prep: 같은 고정 설정으로 T 2021.10~2023.12 예측 (기준일 9개). 매매 점수 B 요소의 튜닝 기간 원값용 (MVP 3-11).
+        시세 모델 성적에는 안 씀 (평가·리포트는 eval·check 기준일만 읽음)
 - report: B0·B1·LightGBM 같은 표 → reports/lgbm.md
 
 실행:
@@ -12,6 +14,7 @@
   uv run python scripts/train_lgbm.py tune
   uv run python scripts/train_lgbm.py backtest [--periods eval]
   uv run python scripts/train_lgbm.py report [--periods eval]
+  uv run python scripts/train_lgbm.py prep
 """
 
 from __future__ import annotations
@@ -187,13 +190,15 @@ def choose(done: pd.DataFrame) -> None:
 
 
 BACKTEST_PERIODS = ("eval", "check")
+PREP = ("202110", "202312")  # 점수 B 요소용 walk-forward 예측 (첫 모델 D 2021.9.30 은 학습 8개월)
 
 
 def backtest_months(periods: tuple[str, ...] = BACKTEST_PERIODS) -> dict[date, tuple[str, list[str]]]:
     """기준일 → (기간, 그 모델로 예측할 T 월들)."""
     out: dict[date, tuple[str, list[str]]] = {}
+    spans = {**PERIODS, "prep": PREP}
     for period in periods:
-        a, b = PERIODS[period]
+        a, b = spans[period]
         for p in pd.period_range(f"{a[:4]}-{a[4:]}", f"{b[:4]}-{b[4:]}", freq="M"):
             ym = f"{p.year}{p.month:02d}"
             out.setdefault(lgbm.anchor_for(ym), (period, []))[1].append(ym)
@@ -242,6 +247,12 @@ def backtest(force: bool, periods: tuple[str, ...]) -> None:
         raise SystemExit(
             f"이 설정({cfg['params_hash']})의 평가가 이미 기록됨: run {prev['run_id'].iloc[0]} (다시 하려면 --force)"
         )
+    run_anchors(cfg, periods)
+    log_backtest(cfg, periods)
+
+
+def run_anchors(cfg: dict, periods: tuple[str, ...]) -> None:
+    """기준일마다 프로세스 하나. 결과 json 이 있는 기준일은 건너뜀 (끊겨도 다시 실행하면 이어짐)."""
     out = OUT / cfg["params_hash"]
     for d, (_, months) in backtest_months(periods).items():
         if (out / f"D={d:%Y%m%d}.json").exists():
@@ -251,7 +262,11 @@ def backtest(force: bool, periods: tuple[str, ...]) -> None:
             check=True,
             cwd=ROOT,
         )
-    log_backtest(cfg, periods)
+
+
+def prep() -> None:
+    check_features()
+    run_anchors(json.loads(CONFIG.read_text(encoding="utf-8")), ("prep",))
 
 
 def load_backtest(
@@ -337,7 +352,7 @@ def log_backtest(cfg: dict, periods: tuple[str, ...] = BACKTEST_PERIODS) -> None
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["probe", "rows", "tune", "backtest", "anchor", "report"])
+    ap.add_argument("cmd", choices=["probe", "rows", "tune", "backtest", "anchor", "report", "prep"])
     ap.add_argument("--d")
     ap.add_argument("--months")
     ap.add_argument("--force", action="store_true")
@@ -356,7 +371,7 @@ def main() -> None:
 
         write_report(json.loads(CONFIG.read_text(encoding="utf-8")), periods)
     else:
-        {"probe": probe, "rows": row_counts, "tune": tune}[args.cmd]()
+        {"probe": probe, "rows": row_counts, "tune": tune, "prep": prep}[args.cmd]()
 
 
 if __name__ == "__main__":

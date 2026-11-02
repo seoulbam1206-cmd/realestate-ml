@@ -16,6 +16,7 @@ from train_lgbm import (
     OUT,
     TUNING_CSV,
     TUNING_FOLDS,
+    backtest_months,
     load_backtest,
     scoring_rows,
     tuning_summary,
@@ -173,8 +174,10 @@ def write_report(cfg: dict, periods: tuple[str, ...] = BACKTEST_PERIODS) -> None
         )
     lgbm_out = OUT / cfg["params_hash"]
     imp = pd.concat(
-        pd.read_csv(p).assign(share=lambda x: x["gain"] / x["gain"].sum())
-        for p in sorted(lgbm_out.glob("*_importance.csv"))
+        pd.read_csv(lgbm_out / f"D={d:%Y%m%d}_importance.csv").assign(
+            share=lambda x: x["gain"] / x["gain"].sum()
+        )
+        for d in backtest_months(periods)
     )
     top = imp.groupby("feature")["share"].mean().sort_values(ascending=False).head(12)
     lines += [
