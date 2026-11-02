@@ -37,3 +37,4 @@ logs/
 
 # 모델 예측·기록 (로컬)
 data/models/
+data/score/
