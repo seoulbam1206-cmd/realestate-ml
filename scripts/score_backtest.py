@@ -81,7 +81,7 @@ def load_trades(pred_dir) -> pd.DataFrame:
         FROM read_parquet('{(FEATURE_DIR / "ym=*.parquet").as_posix()}', union_by_name = true) f
         LEFT JOIN read_parquet('{(pred_dir / "D=*.parquet").as_posix()}') p USING (trade_key, ym)
         """
-    ).arrow()
+    ).to_arrow_table()  # duckdb 2: .arrow() 는 RecordBatchReader
     return tbl.to_pandas(types_mapper=lambda t: pd.ArrowDtype(t) if pa.types.is_string(t) else None)
 
 
