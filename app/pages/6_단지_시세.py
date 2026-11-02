@@ -40,7 +40,9 @@ view = cp[cp["sgg_cd"] == sgg]
 if query:
     flat = view["apt_nm"].str.replace(" ", "", regex=False)
     view = view[flat.str.contains(query.replace(" ", ""), case=False, regex=False)]
-only_priced = st.toggle("가격이 있는 단지만 (거래 5건 이상)", value=True)
+only_priced = st.toggle(
+    "거래 5건 이상만 보기", value=True, help="끄면 거래 5건 미만 단지도 보임 (가격 칸은 비어 있음)"
+)
 if only_priced:
     view = view[view["median_ppm2"].notna()]
 
@@ -62,6 +64,7 @@ out = pd.DataFrame(
     {
         "단지명": view["apt_nm"],
         "법정동": view["umd_nm"],
+        "건축년도": view["build_year"],
         "최근 12개월 거래": view["trade_cnt"],
         "실거래 ㎡당 중위가 (만 원)": view["median_ppm2"].round(0),
         "모델 적정가 ㎡당 (만 원)": view["model_ppm2"].round(0),
@@ -84,6 +87,9 @@ st.dataframe(
     width="stretch",
     height=560,
     column_config={
+        "건축년도": st.column_config.NumberColumn(
+            format="%d", help="같은 동에 이름이 같은 단지를 구분하는 데 씀"
+        ),
         "최근 12개월 거래": st.column_config.NumberColumn(format="localized"),
         "실거래 ㎡당 중위가 (만 원)": st.column_config.NumberColumn(
             format="localized", help=common.TERMS["중위가"]

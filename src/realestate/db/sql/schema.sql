@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS complex_price (
     sgg_cd       CHAR(5)      NOT NULL,
     umd_nm       VARCHAR(20)  NOT NULL,
     apt_nm       VARCHAR(80)  NOT NULL,
+    build_year   SMALLINT     NULL,
     trade_cnt    INT          NOT NULL,
     median_ppm2  DOUBLE       NULL,
     model_ppm2   DOUBLE       NULL,

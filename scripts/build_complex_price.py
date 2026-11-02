@@ -4,6 +4,7 @@
 |---|---|
 | row_id | 행 번호 (같은 동에 이름이 같은 단지가 있어 키로 씀. 단지 식별 해시는 올리지 않음) |
 | sgg_cd, umd_nm, apt_nm | 시군구 코드, 법정동 이름, 단지명 (complex_map) |
+| build_year | 건축년도 (창 안 거래의 최빈값, 같은 동·같은 이름 단지 구분용) |
 | trade_cnt | 최근 12개월 정상 거래 수 (지금 기준 해제 아님) |
 | median_ppm2 | 실거래 ㎡당가 중위값 (만 원/㎡) |
 | model_ppm2 | 같은 거래들의 모델 적정가 ㎡당가 중위값 (만 원/㎡) |
@@ -28,7 +29,7 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-from realestate.config import REFERENCE_CLEAN, ROOT
+from realestate.config import APT_TRADE_CLEAN, REFERENCE_CLEAN, ROOT
 from realestate.models.periods import FEATURE_DIR
 
 OUT = ROOT / "data" / "public" / "complex_price.parquet"
@@ -73,6 +74,16 @@ def main() -> None:
         GROUP BY 1
         """
     ).df()
+    # 건축년도: 창 안 정상 거래의 build_year 최빈값 (같은 동에 이름이 같은 단지를 구분하는 데 씀)
+    by = con.sql(
+        f"""
+        SELECT complex_key, mode(TRY_CAST(build_year AS INTEGER)) AS build_year
+        FROM read_parquet('{(APT_TRADE_CLEAN / "**" / "*.parquet").as_posix()}', union_by_name = true)
+        WHERE NOT is_canceled AND strftime(deal_date, '%Y%m') IN ({", ".join(f"'{m}'" for m in window)})
+        GROUP BY 1
+        """
+    ).df()
+    df = df.merge(by, on="complex_key", how="left", validate="1:1")
     cmap = pd.read_parquet(
         REFERENCE_CLEAN / "complex_map.parquet", columns=["complex_key", "bjd_cd", "apt_nm"]
     )
@@ -90,6 +101,7 @@ def main() -> None:
                 "sgg_cd",
                 "umd_nm",
                 "apt_nm",
+                "build_year",
                 "trade_cnt",
                 "median_ppm2",
                 "model_ppm2",
@@ -98,10 +110,15 @@ def main() -> None:
                 "window_to",
             ]
         ]  # fmt: skip
-        .sort_values(["sgg_cd", "umd_nm", "apt_nm"])
+        .sort_values(["sgg_cd", "umd_nm", "apt_nm", "build_year"])
         .reset_index(drop=True)
     )
     out["trade_cnt"] = out["trade_cnt"].astype("int32")
+    out["build_year"] = out["build_year"].astype("Int16")
+    print(
+        f"건축년도 없는 단지 {out['build_year'].isna().sum():,} · (시군구·동·이름·건축년도) 중복 "
+        f"{out.duplicated(['sgg_cd', 'umd_nm', 'apt_nm', 'build_year']).sum():,}"
+    )
     out.insert(
         0, "row_id", np.arange(1, len(out) + 1, dtype="int32")
     )  # 같은 동에 같은 이름 단지가 있어 키로 씀
