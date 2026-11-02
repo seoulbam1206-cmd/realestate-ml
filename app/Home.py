@@ -40,6 +40,11 @@ st.page_link(
 st.page_link(
     "pages/2_하락_지역_순위.py", label="하락 지역 순위 — 고점 대비 많이 내려온 시군구 순위", icon="📉"
 )
+st.page_link("pages/3_실거래_집계.py", label="실거래 집계 — 시군구별 거래량·중위가 추이", icon="🧾")
+st.page_link(
+    "pages/4_지역_점수_등급.py", label="지역 점수·등급 — 최신 기준월 시군구 매매 등급과 4요소 점수", icon="🏷️"
+)
+st.page_link("pages/5_백테스트_성적표.py", label="백테스트 성적표 — 등급이 실제로 맞았는지, 한계", icon="📊")
 st.page_link("pages/9_출처_안내.py", label="출처 · 안내 — 데이터 출처, 지수 설명, 면책", icon="📄")
 
 with st.expander("데이터 정보"):

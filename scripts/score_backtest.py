@@ -39,8 +39,15 @@ LGBM_CONFIG = ROOT / "config" / "lgbm.json"
 TUNING_CSV = ROOT / "reports" / "score_tuning.csv"
 REPORT = ROOT / "reports" / "score_backtest.md"
 PERIODS = {"tuning": ("202202", "202304"), "eval": ("202401", "202509"), "check": ("202510", "202608")}
+# 화면용 최신 기준월 (고정 설정으로 점수만, 정답 없음). 끝 = 조사 지수 마지막 달 + 1 (T−1 까지 씀)
+PERIODS["live"] = ("202609", "202610")
 LAST_LABEL_MONTH = "202609"  # 신고 기한(10.30) 이 지난 마지막 계약 월. 10.29~30 수집분
-LABEL_END = {"tuning": "202312", "eval": LAST_LABEL_MONTH, "check": LAST_LABEL_MONTH}
+LABEL_END = {
+    "tuning": "202312",
+    "eval": LAST_LABEL_MONTH,
+    "check": LAST_LABEL_MONTH,
+    "live": LAST_LABEL_MONTH,
+}
 CANDIDATES = {
     "s0": {"A": 0.30, "B": 0.30, "C": 0.25, "D": 0.15},
     "s1": {"A": 0.25, "B": 0.25, "C": 0.25, "D": 0.25},
