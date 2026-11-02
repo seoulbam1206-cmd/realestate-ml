@@ -3,14 +3,15 @@
 - tune: 후보 × 튜닝 폴드(T 2023.3 / 7 / 11). 폴드 결과는 reports/lgbm_tuning.csv 에 하나씩 남겨 끊겨도 이어서.
         끝나면 3폴드 평균 MAPE 가 가장 낮은 후보를 config/lgbm.json 에 고정 (MAE 는 함께 보고)
 - backtest: 고정 설정으로 평가 T 2024.1~2025.9 (기준일 7개) + 확인 T 2025.10~2026.8 (4개, 참고).
-        기준일 하나 = 프로세스 하나 (anchor 명령). 같은 설정의 평가가 MLflow 에 이미 있으면 거부
+        기준일 하나 = 프로세스 하나 (anchor 명령). 같은 설정·같은 기간의 평가가 MLflow 에 이미 있으면 거부.
+        --periods eval 이면 평가 기준일만 실행·기록 (확인은 나중에 따로)
 - report: B0·B1·LightGBM 같은 표 → reports/lgbm.md
 
 실행:
   uv run python scripts/train_lgbm.py probe      # 학습 1회 시간·최대 메모리 (튜닝 폴드 D = 2023.9.30, 기본 설정)
   uv run python scripts/train_lgbm.py tune
-  uv run python scripts/train_lgbm.py backtest
-  uv run python scripts/train_lgbm.py report
+  uv run python scripts/train_lgbm.py backtest [--periods eval]
+  uv run python scripts/train_lgbm.py report [--periods eval]
 """
 
 from __future__ import annotations
@@ -185,10 +186,13 @@ def choose(done: pd.DataFrame) -> None:
 # ---------------------------------------------------------------- 평가 (설정 고정 뒤 1회)
 
 
-def backtest_months() -> dict[date, tuple[str, list[str]]]:
+BACKTEST_PERIODS = ("eval", "check")
+
+
+def backtest_months(periods: tuple[str, ...] = BACKTEST_PERIODS) -> dict[date, tuple[str, list[str]]]:
     """기준일 → (기간, 그 모델로 예측할 T 월들)."""
     out: dict[date, tuple[str, list[str]]] = {}
-    for period in ("eval", "check"):
+    for period in periods:
         a, b = PERIODS[period]
         for p in pd.period_range(f"{a[:4]}-{a[4:]}", f"{b[:4]}-{b[4:]}", freq="M"):
             ym = f"{p.year}{p.month:02d}"
@@ -225,12 +229,13 @@ def run_anchor(d: date, months: list[str], cfg: dict) -> None:
     print(json.dumps(info))
 
 
-def backtest(force: bool) -> None:
+def backtest(force: bool, periods: tuple[str, ...]) -> None:
     check_features()
     cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
     tracking.use_experiment("price_backtest")
     prev = mlflow.search_runs(
-        filter_string=f"tags.kind = 'lgbm_backtest' and tags.params_hash = '{cfg['params_hash']}'",
+        filter_string=f"tags.kind = 'lgbm_backtest' and tags.params_hash = '{cfg['params_hash']}' "
+        f"and tags.periods = '{','.join(periods)}'",
         output_format="pandas",
     )
     if len(prev) and not force:
@@ -238,7 +243,7 @@ def backtest(force: bool) -> None:
             f"이 설정({cfg['params_hash']})의 평가가 이미 기록됨: run {prev['run_id'].iloc[0]} (다시 하려면 --force)"
         )
     out = OUT / cfg["params_hash"]
-    for d, (_, months) in backtest_months().items():
+    for d, (_, months) in backtest_months(periods).items():
         if (out / f"D={d:%Y%m%d}.json").exists():
             continue
         subprocess.run(
@@ -246,14 +251,17 @@ def backtest(force: bool) -> None:
             check=True,
             cwd=ROOT,
         )
-    log_backtest(cfg)
+    log_backtest(cfg, periods)
 
 
-def load_backtest(cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_backtest(
+    cfg: dict, periods: tuple[str, ...] = BACKTEST_PERIODS
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     out = OUT / cfg["params_hash"]
-    runs = pd.DataFrame([json.loads(p.read_text(encoding="utf-8")) for p in sorted(out.glob("D=*.json"))])
-    preds = pd.concat(pd.read_parquet(p) for p in sorted(out.glob("D=*.parquet")))
-    a, b = PERIODS["eval"][0], PERIODS["check"][1]
+    stems = [f"D={d:%Y%m%d}" for d in backtest_months(periods)]
+    runs = pd.DataFrame([json.loads((out / f"{s}.json").read_text(encoding="utf-8")) for s in stems])
+    preds = pd.concat(pd.read_parquet(out / f"{s}.parquet") for s in stems)
+    a, b = PERIODS[periods[0]][0], PERIODS[periods[-1]][1]
     cols = [
         "trade_key",
         "ym",
@@ -273,16 +281,22 @@ def load_backtest(cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     return df, runs
 
 
-def log_backtest(cfg: dict) -> None:
+def log_backtest(cfg: dict, periods: tuple[str, ...] = BACKTEST_PERIODS) -> None:
     from realestate.models.metrics import block_bootstrap_diff
 
-    df, runs = load_backtest(cfg)
+    df, runs = load_backtest(cfg, periods)
     out = OUT / cfg["params_hash"]
     tracking.use_experiment("price_backtest")
     tags = tracking.common_tags("eval")
     with mlflow.start_run(run_name=f"lgbm_{cfg['cand']}"):
         mlflow.set_tags(
-            {**tags, "kind": "lgbm_backtest", "params_hash": cfg["params_hash"], "window": cfg["window"]}
+            {
+                **tags,
+                "kind": "lgbm_backtest",
+                "params_hash": cfg["params_hash"],
+                "window": cfg["window"],
+                "periods": ",".join(periods),
+            }  # fmt: skip
         )
         mlflow.log_params(cfg["params"])
         for r in runs.itertuples():
@@ -299,7 +313,7 @@ def log_backtest(cfg: dict) -> None:
                 mlflow.log_metrics(
                     {k: v for k, v in price_metrics(part["deal_amount"], part["pred_lgbm"]).items()}
                 )
-        for period in ("eval", "check"):
+        for period in periods:
             p = df[df["period"] == period]
             mlflow.log_metrics(
                 {f"{period}_{k}": v for k, v in price_metrics(p["deal_amount"], p["pred_lgbm"]).items()}
@@ -315,7 +329,9 @@ def log_backtest(cfg: dict) -> None:
                         f"eval_{k}_minus_{base}_hi": hi,
                     }
                 )
-        mlflow.log_artifacts(str(out), artifact_path="anchors")
+        for d in backtest_months(periods):
+            for f in sorted(out.glob(f"D={d:%Y%m%d}*")):
+                mlflow.log_artifact(str(f), artifact_path="anchors")
 
 
 def main() -> None:
@@ -325,17 +341,20 @@ def main() -> None:
     ap.add_argument("--d")
     ap.add_argument("--months")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--periods", default=",".join(BACKTEST_PERIODS), help="eval 또는 eval,check")
     args = ap.parse_args()
+    periods = tuple(args.periods.split(","))
+    assert periods in (("eval",), BACKTEST_PERIODS), periods
     if args.cmd == "anchor":
         run_anchor(
             date.fromisoformat(args.d), args.months.split(","), json.loads(CONFIG.read_text(encoding="utf-8"))
         )
     elif args.cmd == "backtest":
-        backtest(args.force)
+        backtest(args.force, periods)
     elif args.cmd == "report":
         from report_lgbm import write_report  # scripts/ 안의 리포트
 
-        write_report(json.loads(CONFIG.read_text(encoding="utf-8")))
+        write_report(json.loads(CONFIG.read_text(encoding="utf-8")), periods)
     else:
         {"probe": probe, "rows": row_counts, "tune": tune}[args.cmd]()
 

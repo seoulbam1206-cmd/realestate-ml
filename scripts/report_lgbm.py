@@ -10,7 +10,16 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from train_lgbm import CANDIDATES, OUT, TUNING_CSV, TUNING_FOLDS, load_backtest, scoring_rows, tuning_summary
+from train_lgbm import (
+    BACKTEST_PERIODS,
+    CANDIDATES,
+    OUT,
+    TUNING_CSV,
+    TUNING_FOLDS,
+    load_backtest,
+    scoring_rows,
+    tuning_summary,
+)
 
 from realestate.config import ROOT
 from realestate.models import lgbm
@@ -53,10 +62,10 @@ def breakdown(df: pd.DataFrame, col: str, title: str, note: str = "") -> list[st
     return [*lines, ""]
 
 
-def write_report(cfg: dict) -> None:
+def write_report(cfg: dict, periods: tuple[str, ...] = BACKTEST_PERIODS) -> None:
     tune = pd.read_csv(TUNING_CSV, dtype={"t": str})
     summ = tuning_summary(tune)
-    df, runs = load_backtest(cfg)
+    df, runs = load_backtest(cfg, periods)
     ev = df[df["period"] == "eval"].copy()
 
     lines = [
@@ -97,10 +106,20 @@ def write_report(cfg: dict) -> None:
         "## 2. 평가 (설정 고정 뒤 1회 실행)",
         "",
         f"고정 설정 `config/lgbm.json` ({cfg['cand']}, params_hash `{cfg['params_hash']}`, 고정 {cfg['fixed_at']})",
+        *(
+            []
+            if "check" in periods
+            else [
+                "",
+                "확인 기간(T 2025.10~2026.8, 기준일 4개)은 아직 실행 안 함 → 이 리포트는 평가 기준일 7개만",
+            ]
+        ),
         "",
         *HEAD,
     ]
-    for period, label in (("eval", "**평가**"), ("check", "확인(참고)")):
+    labels = {"eval": "**평가**", "check": "확인(참고)"}
+    for period in periods:
+        label = labels[period]
         a, b = PERIODS[period]
         part = df[df["period"] == period]
         for name, col in PREDS.items():
@@ -139,7 +158,7 @@ def write_report(cfg: dict) -> None:
         "가장 싼 20% 안에서 거래유형별",
     )
     lines += breakdown(ev, "b1_level", "단지 이력 유무 (complex = 단지 12개월 이력 있음, b0 = 없음)")
-    lines += breakdown(df, "ym", "월별 (평가 + 확인)")
+    lines += breakdown(df, "ym", "월별 (평가 + 확인)" if "check" in periods else "월별 (평가)")
 
     lines += [
         "## 4. 실측 시간·메모리 (기준일 하나 = 프로세스 하나, 4스레드)",
