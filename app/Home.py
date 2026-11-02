@@ -45,6 +45,11 @@ st.page_link(
     "pages/4_지역_점수_등급.py", label="지역 점수·등급 — 최신 기준월 시군구 매매 등급과 4요소 점수", icon="🏷️"
 )
 st.page_link("pages/5_백테스트_성적표.py", label="백테스트 성적표 — 등급이 실제로 맞았는지, 한계", icon="📊")
+st.page_link(
+    "pages/6_단지_시세.py",
+    label="단지 시세 — 단지별 최근 12개월 실거래 중위가와 모델 적정가 (정보용, 등급 없음)",
+    icon="🏢",
+)
 st.page_link("pages/9_출처_안내.py", label="출처 · 안내 — 데이터 출처, 지수 설명, 면책", icon="📄")
 
 with st.expander("데이터 정보"):

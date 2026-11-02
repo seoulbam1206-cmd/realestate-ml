@@ -115,3 +115,17 @@ CREATE TABLE IF NOT EXISTS bt_meta (
     k            VARCHAR(40)  NOT NULL PRIMARY KEY,
     v            VARCHAR(200) NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS complex_price (
+    row_id       INT          NOT NULL PRIMARY KEY,
+    sgg_cd       CHAR(5)      NOT NULL,
+    umd_nm       VARCHAR(20)  NOT NULL,
+    apt_nm       VARCHAR(80)  NOT NULL,
+    trade_cnt    INT          NOT NULL,
+    median_ppm2  DOUBLE       NULL,
+    model_ppm2   DOUBLE       NULL,
+    gap_pct      DOUBLE       NULL,
+    window_from  DATE         NOT NULL,
+    window_to    DATE         NOT NULL,
+    KEY idx_sgg (sgg_cd)
+);

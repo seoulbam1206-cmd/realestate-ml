@@ -134,7 +134,7 @@ def load_public(name: str) -> tuple[pd.DataFrame, str]:
             st.stop()
         df = pd.read_parquet(path)
         backend = "로컬 Parquet"
-    for c in ("ym", "asof_ym"):
+    for c in ("ym", "asof_ym", "window_from", "window_to"):
         if c in df:
             df[c] = pd.to_datetime(df[c])
     for c in ("r1", "r2", "r3", "sido_level_index"):
@@ -151,7 +151,68 @@ PUBLIC_TABLES = (
     "bt_grade",
     "bt_baseline",
     "bt_meta",
+    "complex_price",
 )
+
+
+GRADES = ["매매 추천", "매매 고려", "매매 고려 대상 아님", "매매 절대 불가", "데이터 부족"]
+# 등급 색 (배경, 글자). 글자색을 같이 지정해 라이트·다크 테마 모두에서 읽힘
+GRADE_COLORS = {
+    "매매 추천": ("#1e8e4e", "#ffffff"),  # 초록
+    "매매 고려": ("#b9e4a0", "#1d3b12"),  # 연두
+    "매매 고려 대상 아님": ("#8a8f98", "#ffffff"),  # 회색
+    "매매 절대 불가": ("#d63c3c", "#ffffff"),  # 빨강
+    "데이터 부족": ("#e6e7ea", "#4a4f57"),  # 연회색
+}
+
+# 용어 한 줄 풀이 (화면에서 용어 옆에 붙임)
+TERMS = {
+    "백분위": "그 달 전국 시군구를 줄 세웠을 때의 위치 (0 = 가장 낮음, 100 = 가장 높음)",
+    "IC": "점수 순위와 이후 실제 수익 순위가 얼마나 같은지 (−1 ~ +1, 0 이면 관계 없음, +면 점수 높은 곳이 더 오름)",
+    "초과 수익": "그 시군구 가격 변화 − 전국 가격 변화 (같은 단지·면적대끼리 비교)",
+    "적중률": "초과 수익이 0 보다 큰 (전국보다 더 오른) 경우의 비율",
+    "95% 구간": "우연히 나올 수 있는 범위. 구간에 0 이 들어 있으면 우연과 구분되지 않음",
+    "중위가": "가격을 줄 세웠을 때 가운데 값 (평균보다 극단값에 덜 흔들림)",
+    "해제": "계약 후 취소 신고된 거래 (집계에서 뺌)",
+    "모델 적정가": "시세 모델(LightGBM)이 단지·면적·층·시점으로 추정한 가격. 그 거래를 학습에 쓰지 않은 모델의 값",
+}
+
+
+_SIDO_SHORT = {
+    "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구", "인천광역시": "인천", "대전광역시": "대전",
+    "울산광역시": "울산", "세종특별자치시": "세종", "경기도": "경기", "강원특별자치도": "강원", "충청북도": "충북",
+    "충청남도": "충남", "전북특별자치도": "전북", "전남광주통합특별시": "전남광주", "경상북도": "경북",
+    "경상남도": "경남", "제주특별자치도": "제주",
+}  # fmt: skip
+
+
+def sido_short(name: str) -> str:
+    return _SIDO_SHORT.get(name, name)
+
+
+def term(name: str) -> str:
+    """'**용어**(풀이)' 형태 한 줄."""
+    return f"**{name}**: {TERMS[name]}"
+
+
+def intro(lines: list[str]) -> None:
+    """화면 맨 위 '이 화면에서 볼 수 있는 것' (2~3줄)."""
+    st.markdown("**이 화면에서 볼 수 있는 것**  \n" + "  \n".join(f"· {x}" for x in lines))
+
+
+def grade_style(v: object) -> str:
+    """pandas Styler.map 용: 등급 칸 색."""
+    c = GRADE_COLORS.get(v)  # type: ignore[arg-type]
+    return f"background-color: {c[0]}; color: {c[1]}; font-weight: 600" if c else ""
+
+
+def grade_badge(grade: str, text: str | None = None) -> str:
+    """HTML 배지 (st.markdown(..., unsafe_allow_html=True) 로 출력)."""
+    bg, fg = GRADE_COLORS[grade]
+    return (
+        f'<span style="background:{bg};color:{fg};padding:2px 10px;border-radius:10px;'
+        f'font-weight:600;white-space:nowrap">{text or grade}</span>'
+    )
 
 
 def rule_text(grade: str, flags: str) -> str:

@@ -6,8 +6,12 @@ import common
 
 st.set_page_config(page_title="실거래 집계", page_icon="🧾", layout="wide")
 st.title("실거래 집계")
-st.write(
-    "국토교통부 아파트 매매 실거래를 시군구 × 계약월로 모은 거래량과 중위 가격입니다. 개별 거래는 보여 주지 않습니다."
+common.intro(
+    [
+        "시군구를 골라 아파트 **매매 거래량**과 **중위 거래가**·**㎡당 중위가**가 달마다 어떻게 변했는지 비교합니다.",
+        "국토교통부 실거래를 시군구 × 계약월로 모은 값이며, 개별 거래는 보여 주지 않습니다.",
+        "최근 2개월은 신고가 덜 들어온 잠정치라 점선으로 따로 표시합니다.",
+    ]
 )
 
 agg, backend = common.load_public("agg_region_month")
@@ -126,6 +130,7 @@ def line_chart(col: str, y_title: str, fmt: str) -> go.Figure:
     return fig
 
 
+st.caption(f"{common.term('중위가')} · {common.term('해제')}")
 st.subheader("거래량 (계약월)")
 st.plotly_chart(line_chart("trade_cnt", "건", ",.0f"), width="stretch", theme="streamlit")
 st.subheader("중위 거래가")

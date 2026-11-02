@@ -11,14 +11,17 @@ names, _ = common.load_public("region_name")
 df = score.merge(names, on="sgg_cd", how="left")
 asof = df["asof_ym"].max()
 
-st.write(
-    f"**{common.fmt_ym(asof)} 초 기준** 시군구별 매매 점수와 등급입니다. "
-    "가격이 내려온 정도를 4요소(고점 대비 하락률, 모델 예측가 대비 저평가, 최근 3개월 추세, 거래량 변화)로 매겨 "
-    "달마다 전국 백분위로 바꾸고 같은 비중(각 25%)으로 더했습니다."
+common.intro(
+    [
+        f"**{common.fmt_ym(asof)} 초 기준** 전국 시군구의 매매 등급과 그렇게 나온 이유를 한 줄로 봅니다.",
+        "등급은 4요소(고점 대비 하락률 · 모델 예측가 대비 저평가 · 최근 3개월 추세 · 거래량 변화)를 "
+        "전국 백분위로 바꿔 같은 비중(각 25%)으로 더한 점수와, 위험 규칙으로 정합니다.",
+        "4요소 숫자는 표 아래 **4요소 상세**를 펼치면 볼 수 있습니다.",
+    ]
 )
 st.warning(common.REGION_NOTE, icon="⚠️")
 
-GRADES = ["매매 추천", "매매 고려", "매매 고려 대상 아님", "매매 절대 불가", "데이터 부족"]
+GRADES = common.GRADES
 c1, c2 = st.columns([3, 2])
 sidos = sorted(df["sido_nm"].dropna().unique())
 pick_sido = c1.multiselect("시도", sidos, placeholder="전체 시도")
@@ -32,67 +35,116 @@ if pick_grade:
 counts = view["grade"].value_counts()
 cols = st.columns(len(GRADES))
 for col, g in zip(cols, GRADES, strict=True):
+    col.markdown(common.grade_badge(g), unsafe_allow_html=True)
     help_ = {
         "매매 절대 불가": f"규칙 R2·R3 중 하나에 해당 ({common.UNVERIFIED}: 평가 기간에 R2 0건, R3 정답 3건)",
         "데이터 부족": f"{common.NODATA_NOTE} — 등급이 아님 (12개월 거래 30건 미만이거나 3개월 중개거래 10건 미만)",
     }.get(g)
-    col.metric(g, f"{int(counts.get(g, 0)):,}곳", help=help_)
+    col.metric(g, f"{int(counts.get(g, 0)):,}곳", help=help_, label_visibility="collapsed")
+
+FACTORS = {"p_a": "고점 대비 하락", "p_b": "모델 저평가", "p_c": "3개월 추세", "p_d": "거래량 변화"}
+
+
+def reason(r: pd.Series) -> str:
+    """등급이 나온 이유 한 줄 (등급 규칙 그대로 + 가장 높은·낮은 요소)."""
+    g = r["grade"]
+    if g in ("매매 절대 불가", "데이터 부족"):
+        return common.rule_text(g, r["rule_flags"])
+    s, pc = r["score"], r["p_c"]
+    if g == "매매 추천":
+        head = f"점수 {s:.0f} (70 이상), 추세 백분위 {pc:.0f} (40 이상)"
+    elif g == "매매 고려" and s >= 70:
+        head = f"점수 {s:.0f} 이지만 추세 백분위 {pc:.0f} (40 미만)"
+    elif g == "매매 고려":
+        head = f"점수 {s:.0f} (50~70)"
+    else:
+        head = f"점수 {s:.0f} (50 미만)"
+    p = r[list(FACTORS)].astype(float)
+    hi, lo = p.idxmax(), p.idxmin()
+    return f"{head} · 높음: {FACTORS[hi]} {p[hi]:.0f} · 낮음: {FACTORS[lo]} {p[lo]:.0f}"
+
 
 order = {g: i for i, g in enumerate(GRADES)}
-table = view.assign(
-    _o=view["grade"].map(order),
-    규칙=[common.rule_text(g, f) for g, f in zip(view["grade"], view["rule_flags"], strict=True)],
-).sort_values(["_o", "score"], ascending=[True, False])
-out = pd.DataFrame(
+table = view.assign(_o=view["grade"].map(order)).sort_values(["_o", "score"], ascending=[True, False])
+label = (
+    table["sgg_nm"]
+    if len(pick_sido) == 1
+    else table["sido_nm"].map(common.sido_short) + " " + table["sgg_nm"]
+)
+basic = pd.DataFrame(
     {
-        "시도": table["sido_nm"],
-        "시군구": table["sgg_nm"],
+        "시군구": label,
         "등급": table["grade"],
-        "규칙·안내": table["규칙"],
-        "점수": table["score"],
-        "A 고점 대비 하락": table["p_a"],
-        "B 모델 저평가": table["p_b"],
-        "C 3개월 추세": table["p_c"],
-        "D 거래량 변화": table["p_d"],
-        "고점 대비 (%)": -table["drawdown_pct"],
-        "3개월 지수 변화 (%)": table["trend_3m_pct"],
-        "저평가 (%)": table["underval_pct"],
-        "거래량 (전년 대비 배)": table["volume_ratio"],
-        "12개월 거래": table["trade_12m"],
+        "사유": [reason(r) for _, r in table.iterrows()],
     }
 )
-pct = {"min_value": 0, "max_value": 100, "format": "%.0f"}
 st.dataframe(
-    out,
+    basic.style.map(common.grade_style, subset=["등급"]),
     hide_index=True,
     width="stretch",
-    height=560,
+    height=520,
     column_config={
-        "점수": st.column_config.ProgressColumn("점수", help="4요소 백분위의 평균 (0~100)", **pct),
-        "A 고점 대비 하락": st.column_config.NumberColumn(
-            help="전국 백분위. 최근 5년 고점 대비 많이 내렸을수록 높음", format="%.0f"
+        "시군구": st.column_config.TextColumn(width="small"),
+        "등급": st.column_config.TextColumn(width="small"),
+        "사유": st.column_config.TextColumn(
+            width="large", help="등급 규칙과, 4요소 백분위 중 가장 높은·낮은 것"
         ),
-        "B 모델 저평가": st.column_config.NumberColumn(
-            help="전국 백분위. 최근 3개월 중개거래가 모델 시세보다 쌀수록 높음", format="%.0f"
-        ),
-        "C 3개월 추세": st.column_config.NumberColumn(
-            help="전국 백분위. 최근 3개월 조사 지수가 오를수록 높음", format="%.0f"
-        ),
-        "D 거래량 변화": st.column_config.NumberColumn(
-            help="전국 백분위. 거래량이 전년 같은 기간보다 늘수록 높음", format="%.0f"
-        ),
-        "고점 대비 (%)": st.column_config.NumberColumn(format="%.1f"),
-        "3개월 지수 변화 (%)": st.column_config.NumberColumn(format="%.2f"),
-        "저평가 (%)": st.column_config.NumberColumn(
-            help="+면 모델 시세보다 싸게 거래됨 (건수로 0 쪽으로 당긴 값)", format="%.2f"
-        ),
-        "거래량 (전년 대비 배)": st.column_config.NumberColumn(format="%.2f"),
     },
 )
 st.caption(
-    f"{len(out):,}곳 · 데이터 부족은 등급이 아니며 점수 칸이 비어 있을 수 있음 · "
+    f"{len(basic):,}곳 · {common.term('백분위')} · 데이터 부족은 등급이 아님 · "
     f"A·C 는 R-ONE 조사 지수 (시군구 지수가 없는 {int(df['sido_level_index'].sum())}곳은 시도 값) · 자료 위치: {backend}"
 )
+
+with st.expander("4요소 상세 (백분위·원값)"):
+    detail = pd.DataFrame(
+        {
+            "시군구": label,
+            "등급": table["grade"],
+            "점수": table["score"],
+            "A 고점 대비 하락": table["p_a"],
+            "B 모델 저평가": table["p_b"],
+            "C 3개월 추세": table["p_c"],
+            "D 거래량 변화": table["p_d"],
+            "고점 대비 (%)": -table["drawdown_pct"],
+            "3개월 지수 변화 (%)": table["trend_3m_pct"],
+            "저평가 (%)": table["underval_pct"],
+            "거래량 (전년 대비 배)": table["volume_ratio"],
+            "12개월 거래": table["trade_12m"],
+        }
+    )
+    pct = {"min_value": 0, "max_value": 100, "format": "%.0f"}
+    st.dataframe(
+        detail.style.map(common.grade_style, subset=["등급"]),
+        hide_index=True,
+        width="stretch",
+        height=480,
+        column_config={
+            "점수": st.column_config.ProgressColumn("점수", help="4요소 백분위의 평균 (0~100)", **pct),
+            "A 고점 대비 하락": st.column_config.NumberColumn(
+                help="전국 백분위. 최근 5년 고점 대비 많이 내렸을수록 높음", format="%.0f"
+            ),
+            "B 모델 저평가": st.column_config.NumberColumn(
+                help="전국 백분위. 최근 3개월 중개거래가 모델 시세보다 쌀수록 높음", format="%.0f"
+            ),
+            "C 3개월 추세": st.column_config.NumberColumn(
+                help="전국 백분위. 최근 3개월 조사 지수가 오를수록 높음", format="%.0f"
+            ),
+            "D 거래량 변화": st.column_config.NumberColumn(
+                help="전국 백분위. 거래량이 전년 같은 기간보다 늘수록 높음", format="%.0f"
+            ),
+            "고점 대비 (%)": st.column_config.NumberColumn(format="%.1f"),
+            "3개월 지수 변화 (%)": st.column_config.NumberColumn(format="%.2f"),
+            "저평가 (%)": st.column_config.NumberColumn(
+                help="+면 모델 시세보다 싸게 거래됨 (건수로 0 쪽으로 당긴 값)", format="%.2f"
+            ),
+            "거래량 (전년 대비 배)": st.column_config.NumberColumn(format="%.2f"),
+        },
+    )
+    st.caption(
+        "A~D 는 백분위(0~100, 높을수록 점수에 유리), 오른쪽 % 칸은 원값. "
+        "점수 = 네 백분위의 평균. 데이터 부족은 점수 칸이 비어 있을 수 있음"
+    )
 
 with st.expander("등급은 어떻게 정하나요"):
     st.markdown(

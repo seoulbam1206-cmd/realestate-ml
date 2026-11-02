@@ -40,5 +40,6 @@ def test_publish_refuses_trade_level_columns():
     assert set(publish.GROUPS["mvp3"]) == {
         "region_name", "agg_region_month", "region_score", "bt_ic", "bt_grade", "bt_baseline", "bt_meta"
     }  # fmt: skip
+    assert set(publish.GROUPS["complex"]) == {"complex_price"}
     ddl = " ".join(schema_sql())
     assert all(f"CREATE TABLE IF NOT EXISTS {t} " in ddl for t in publish.TABLES)

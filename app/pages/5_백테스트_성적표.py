@@ -17,26 +17,64 @@ meta = dict(zip(meta_df["k"], meta_df["v"], strict=True))
 span = lambda k: f"{meta[k][:4]}.{int(meta[k][4:6])}~{meta[k][7:11]}.{int(meta[k][11:])}"  # noqa: E731
 w = json.loads(meta["weights"])
 
-st.write(
-    f"점수 설정을 튜닝 기간({span('tuning_period')})에 고정한 뒤 **평가 기간({span('eval_period')}) 에 한 번만** 채점한 결과입니다. "
-    f"정답은 그 달부터 6·12개월 동안 같은 단지·면적대 가격이 전국보다 얼마나 더 올랐는지(초과 수익)입니다. "
-    f"확인 기간({span('check_period')})은 정답이 일부만 있어 참고용입니다."
-)
-st.warning(common.REGION_NOTE, icon="⚠️")
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("판정 (미리 정한 3개 규칙)", "통과" if meta["verdict"] == "pass" else "미달")
-k2.metric("평가 6개월 IC", meta["eval_ic6"], help="매월 시군구 순위 상관(점수 vs 이후 초과 수익)의 평균")
-k3.metric("가중치 A·B·C·D", " · ".join(f"{w[k]:.2f}" for k in "ABCD"))
-k4.metric(
-    "규칙 버전", meta["rule_version"], help="2 = R1 을 절대 불가 대신 '데이터 부족'으로 (튜닝 후 조정 1회)"
+common.intro(
+    [
+        "지역 등급이 **실제로 맞았는지** 과거 자료로 채점한 결과입니다 (설정을 고정한 뒤 평가 기간에 한 번만 채점).",
+        "정답은 그 달부터 6·12개월 동안 같은 단지·면적대 가격이 **전국보다 얼마나 더 올랐는지**(초과 수익)입니다.",
+        "맨 위 결론 3줄을 먼저 보고, 숫자는 아래 상세에서 확인하세요.",
+    ]
 )
 
 f3 = lambda v: "-" if pd.isna(v) else f"{v:+.3f}"  # noqa: E731
 pc = lambda v: "-" if pd.isna(v) else f"{v * 100:+.2f}"  # noqa: E731
+
+
+def _ic(zone: str, h: int = 6) -> pd.Series:
+    return ic[
+        (ic["period"] == "eval")
+        & (ic["horizon_m"] == h)
+        & (ic["zone"] == zone)
+        & (ic["value_key"] == "score")
+    ].iloc[0]
+
+
+def _gx(gr: str, h: int = 6) -> float:
+    return grade.loc[
+        (grade["period"] == "eval") & (grade["horizon_m"] == h) & (grade["grade"] == gr), "x_mean"
+    ].iloc[0]
+
+
+nat, cap, loc = _ic("전국"), _ic("수도권"), _ic("지방")
+in_zone_zero = all(r["ci_lo"] <= 0 <= r["ci_hi"] for r in (cap, loc))
+st.subheader("결론")
+st.markdown(
+    f"""
+1. **{"미리 정한 판정 3개를 모두 통과" if meta["verdict"] == "pass" else "미리 정한 판정 미달"}**: 평가 기간({span("eval_period")}) 점수가 높은 시군구가 이후 6개월 전국보다 더 오르는 경향이 있었습니다 (IC {f3(nat["ic_mean"])}, 95% 구간 {f3(nat["ci_lo"])} ~ {f3(nat["ci_hi"])}).
+2. **{"하지만 대부분 수도권·지방 차이에서 나왔습니다" if in_zone_zero else "권역 안에서도 차이가 있었습니다"}**: 같은 권역 안에서만 비교하면 IC 가 수도권 {f3(cap["ic_mean"])} · 지방 {f3(loc["ic_mean"])}{"로 0 과 구분되지 않습니다" if in_zone_zero else ""}.
+3. **추천과 고려는 성과가 거의 같고, 절대 불가 규칙은 {common.UNVERIFIED}**: 6개월 초과 수익 추천 {pc(_gx("매매 추천"))}% · 고려 {pc(_gx("매매 고려"))}% · 고려 대상 아님 {pc(_gx("매매 고려 대상 아님"))}%. R2·R3 는 평가 기간 사례가 거의 없습니다.
+"""
+)
+st.warning(common.REGION_NOTE, icon="⚠️")
+
+st.divider()
+st.subheader("상세")
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("판정 (미리 정한 3개 규칙)", "통과" if meta["verdict"] == "pass" else "미달")
+k2.metric("평가 6개월 IC", meta["eval_ic6"], help=common.TERMS["IC"])
+k3.metric("가중치 A·B·C·D", " · ".join(f"{w[k]:.2f}" for k in "ABCD"))
+k4.metric(
+    "규칙 버전", meta["rule_version"], help="2 = R1 을 절대 불가 대신 '데이터 부족'으로 (튜닝 후 조정 1회)"
+)
+st.caption(
+    f"튜닝 기간 {span('tuning_period')} 에 설정 고정 → 평가 기간 {span('eval_period')} 한 번 채점 → "
+    f"확인 기간 {span('check_period')} 은 정답이 일부만 있어 참고용"
+)
+
 PERIOD = {"tuning": "튜닝", "eval": "평가", "check": "확인 (참고)"}
 
 # ── 1. IC ───────────────────────────────────────────────────
 st.subheader("순위 상관 IC")
+st.caption(f"{common.term('IC')} · {common.term('95% 구간')}")
 nat = ic[(ic["zone"] == "전국") & (ic["value_key"] == "score")]
 rows = []
 for p in PERIOD:
@@ -71,12 +109,13 @@ st.caption(
 st.subheader("등급별 이후 성과 (평가 기간)")
 h = st.radio("정답 기간 ", [6, 12], horizontal=True, format_func=lambda h: f"{h}개월", key="h_grade")
 g = grade[(grade["period"] == "eval") & (grade["horizon_m"] == h)]
-ORDER = ["매매 추천", "매매 고려", "매매 고려 대상 아님", "매매 절대 불가", "데이터 부족"]
+ORDER = common.GRADES
 g = g.set_index("grade").reindex(ORDER).reset_index()
 
 fig = go.Figure(
     go.Bar(
-        x=g["grade"], y=g["x_mean"] * 100, marker={"color": common.series_colors()[0], "cornerradius": 4},
+        x=g["grade"], y=g["x_mean"] * 100,
+        marker={"color": [common.GRADE_COLORS[x][0] for x in g["grade"]], "cornerradius": 4},
         text=[f"{v:+.2f}%" if pd.notna(v) else "정답 없음" for v in g["x_mean"] * 100], textposition="outside",
         customdata=g["n"], hovertemplate="%{x}<br>초과 수익 평균 %{y:+.2f}%<br>정답 있는 건 %{customdata:,}<extra></extra>",
     )
@@ -109,9 +148,9 @@ tbl["안내"] = (
     )
     .fillna("")
 )
-st.dataframe(tbl, hide_index=True, width="stretch")
+st.dataframe(tbl.style.map(common.grade_style, subset=["등급"]), hide_index=True, width="stretch")
 st.caption(
-    "초과 수익 = 시군구 − 전국 (같은 단지·면적대 비교, log 차이 × 100). 적중률 = 초과 수익 > 0 인 비율. 최대 하락은 R-ONE 조사 지수"
+    f"{common.term('초과 수익')} (log 차이 × 100) · {common.term('적중률')} · 최대 하락은 R-ONE 조사 지수"
 )
 
 with st.expander("튜닝 기간 · 확인 기간 (참고)"):

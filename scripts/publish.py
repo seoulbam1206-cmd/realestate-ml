@@ -4,6 +4,7 @@
   uv run python scripts/publish.py --dry-run                 # 접속 없이 올릴 표·열·행 수만 확인
   uv run python scripts/publish.py                           # 전부 업로드
   uv run python scripts/publish.py --tables mvp3 --dry-run   # MVP 3 표만 (build_public.py 결과)
+  uv run python scripts/publish.py --tables complex --dry-run  # 단지 시세 표만 (build_complex_price.py 결과)
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ GROUPS = {
             "bt_meta",
         )
     },
+    "complex": {"complex_price": PUBLIC / "complex_price.parquet"},  # scripts/build_complex_price.py
 }
 TABLES = {k: v for g in GROUPS.values() for k, v in g.items()}
 # 개별 거래 행을 실수로 올리지 않도록: 거래 단위 열이 있는 표는 거부
@@ -93,7 +95,7 @@ def main() -> None:
             conn.execute(text(f"DELETE FROM {name}"))
             for i in range(0, len(rows), CHUNK):
                 conn.execute(insert, rows[i : i + CHUNK])
-            ym_col = next((c for c in ("ym", "asof_ym") if c in df), None)
+            ym_col = next((c for c in ("ym", "asof_ym", "window_to") if c in df), None)
             last_ym = pd.Timestamp(df[ym_col].max()).date() if ym_col else None
             conn.execute(
                 text(
