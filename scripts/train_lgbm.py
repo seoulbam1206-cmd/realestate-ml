@@ -7,6 +7,8 @@
         --periods eval 이면 평가 기준일만 실행·기록 (확인은 나중에 따로)
 - prep: 같은 고정 설정으로 T 2021.10~2023.12 예측 (기준일 9개). 매매 점수 B 요소의 튜닝 기간 원값용 (MVP 3-11).
         시세 모델 성적에는 안 씀 (평가·리포트는 eval·check 기준일만 읽음)
+- canceled: 지금 기준 해제된 거래의 예측을 빠진 기준일에 채움 (같은 설정으로 다시 학습, 기존 예측은 그대로 두고 재현 여부만 비교).
+        점수 B 는 "C(T) 에 정상으로 보이던" 거래를 써야 하는데 그중 나중에 해제된 거래는 채점 행이 아니라 예측이 없었음
 - report: B0·B1·LightGBM 같은 표 → reports/lgbm.md
 
 실행:
@@ -205,23 +207,40 @@ def backtest_months(periods: tuple[str, ...] = BACKTEST_PERIODS) -> dict[date, t
     return out
 
 
-def run_anchor(d: date, months: list[str], cfg: dict) -> None:
-    """기준일 하나: 학습 → T 월 예측을 파일로 (프로세스 하나에서, 끝나면 메모리 반환)."""
+def run_anchor(d: date, months: list[str], cfg: dict, canceled_only: bool = False) -> None:
+    """기준일 하나: 학습 → T 월 예측을 파일로 (프로세스 하나에서, 끝나면 메모리 반환).
+
+    채점 행(지금 기준 해제 아님) → D=*.parquet, 지금 기준 해제된 거래 → D=*_canceled.parquet (점수 B 용, 채점에 안 씀).
+    canceled_only: 이미 있는 기준일에 해제 거래 예측만 채움. 채점 행 예측은 기존 파일과 비교만 하고 덮어쓰지 않음
+    """
     t0 = time.perf_counter()
     train = lgbm.training_frame(d)
     assert train["deal_date"].max() <= pd.Timestamp(d)
     model, cats, info = lgbm.fit(train, d, cfg["params"])
     del train
     gc.collect()
-    test = scoring_rows(months[0], months[-1])
-    test = test[test["ym"].isin(months)]
+    rows = lgbm.load_months(months[0], months[-1], [*lgbm.LOAD_COLS, "trade_key"])
+    rows = rows[rows["ym"].isin(months)].reset_index(drop=True)
     pred = pd.DataFrame(
-        {"trade_key": test["trade_key"], "ym": test["ym"], "pred_lgbm": lgbm.predict_price(model, test, cats)}
+        {"trade_key": rows["trade_key"], "ym": rows["ym"], "pred_lgbm": lgbm.predict_price(model, rows, cats)}
     )
+    keep = ~rows["is_canceled"].to_numpy()
     out = OUT / cfg["params_hash"]
     out.mkdir(parents=True, exist_ok=True)
     stem = f"D={d:%Y%m%d}"
-    pred.to_parquet(out / f"{stem}.parquet", index=False)
+    pred[~keep].to_parquet(out / f"{stem}_canceled.parquet", index=False)
+    if canceled_only:
+        old = pd.read_parquet(out / f"{stem}.parquet")
+        new = old[["trade_key", "ym"]].merge(pred[keep], on=["trade_key", "ym"], how="left", validate="1:1")
+        assert new["pred_lgbm"].notna().all() and len(new) == keep.sum(), "채점 행이 기존 예측과 다름"
+        rel = (new["pred_lgbm"] / old["pred_lgbm"] - 1).abs()
+        info |= {"anchor": str(d), "n_canceled": int((~keep).sum()), "max_rel_diff": float(rel.max()),
+                 "mean_rel_diff": float(rel.mean()), "sec_wall": round(time.perf_counter() - t0, 1),
+                 "peak_mb": peak_mb()}  # fmt: skip
+        (out / f"{stem}_canceled.json").write_text(json.dumps(info), encoding="utf-8")
+        print(json.dumps(info))
+        return
+    pred[keep].to_parquet(out / f"{stem}.parquet", index=False)
     imp = pd.DataFrame({"feature": model.feature_name(), "gain": model.feature_importance("gain")})
     imp.to_csv(out / f"{stem}_importance.csv", index=False)
     info |= {
@@ -267,6 +286,31 @@ def run_anchors(cfg: dict, periods: tuple[str, ...]) -> None:
 def prep() -> None:
     check_features()
     run_anchors(json.loads(CONFIG.read_text(encoding="utf-8")), ("prep",))
+
+
+def fill_canceled() -> None:
+    """해제 거래 예측이 없는 기준일 (이 명령을 넣기 전에 실행한 기준일) 을 하나씩 채움."""
+    check_features()
+    cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+    out = OUT / cfg["params_hash"]
+    for d, (_, months) in backtest_months(("prep", *BACKTEST_PERIODS)).items():
+        stem = f"D={d:%Y%m%d}"
+        if not (out / f"{stem}.json").exists() or (out / f"{stem}_canceled.parquet").exists():
+            continue
+        subprocess.run(
+            [
+                sys.executable,
+                __file__,
+                "anchor",
+                "--d",
+                str(d),
+                "--months",
+                ",".join(months),
+                "--canceled-only",
+            ],
+            check=True,
+            cwd=ROOT,
+        )
 
 
 def load_backtest(
@@ -352,17 +396,23 @@ def log_backtest(cfg: dict, periods: tuple[str, ...] = BACKTEST_PERIODS) -> None
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["probe", "rows", "tune", "backtest", "anchor", "report", "prep"])
+    ap.add_argument(
+        "cmd", choices=["probe", "rows", "tune", "backtest", "anchor", "report", "prep", "canceled"]
+    )
     ap.add_argument("--d")
     ap.add_argument("--months")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--canceled-only", action="store_true")
     ap.add_argument("--periods", default=",".join(BACKTEST_PERIODS), help="eval 또는 eval,check")
     args = ap.parse_args()
     periods = tuple(args.periods.split(","))
     assert periods in (("eval",), BACKTEST_PERIODS), periods
     if args.cmd == "anchor":
         run_anchor(
-            date.fromisoformat(args.d), args.months.split(","), json.loads(CONFIG.read_text(encoding="utf-8"))
+            date.fromisoformat(args.d),
+            args.months.split(","),
+            json.loads(CONFIG.read_text(encoding="utf-8")),
+            args.canceled_only,
         )
     elif args.cmd == "backtest":
         backtest(args.force, periods)
@@ -371,7 +421,9 @@ def main() -> None:
 
         write_report(json.loads(CONFIG.read_text(encoding="utf-8")), periods)
     else:
-        {"probe": probe, "rows": row_counts, "tune": tune, "prep": prep}[args.cmd]()
+        {"probe": probe, "rows": row_counts, "tune": tune, "prep": prep, "canceled": fill_canceled}[
+            args.cmd
+        ]()
 
 
 if __name__ == "__main__":
