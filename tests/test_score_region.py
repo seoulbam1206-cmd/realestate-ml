@@ -154,10 +154,30 @@ def test_rules_override_score():
     el.loc[2, "cancel_ratio"] = 0.151  # R3
     el.loc[3, "D"] = np.nan  # 요소 결측 → R1
     out = region.score(el, {"A": 0.25, "B": 0.25, "C": 0.25, "D": 0.25})
-    assert (out["grade"] == region.NEVER).all()
+    assert out["grade"].tolist() == [region.NODATA, region.NEVER, region.NEVER, region.NODATA]
     assert out[["r1", "r2", "r3"]].values.tolist() == [
         [True, False, False], [False, True, False], [False, False, True], [True, False, False]
     ]  # fmt: skip
+
+
+def test_grade_names_unchanged_and_nodata_outside():
+    assert region.GRADES == ["매매 추천", "매매 고려", "매매 고려 대상 아님", "매매 절대 불가"]
+    assert region.NODATA == "데이터 부족" and region.NODATA not in region.GRADES
+
+
+def test_r1_is_nodata_not_never_but_r2_r3_still_win():
+    """13장 조정: R1 → 데이터 부족 (등급 없음). R1 과 R2·R3 가 겹치면 절대 불가. 점수가 낮기만 하면 고려 대상 아님."""
+    x = np.arange(6, dtype=float) + 10
+    el = _grid(A=x, B=x, C=[np.log(0.96)] * 6, D=x)
+    el.loc[0, "B"] = np.nan  # R1 ② 만
+    el.loc[1, "n12"] = 10  # R1 ① 만 (점수는 있음)
+    el.loc[2, ["B", "vol_ratio", "down3"]] = [np.nan, 0.4, True]  # R1 + R2
+    el.loc[3, ["n12", "cancel_ratio"]] = [10, 0.2]  # R1 + R3
+    out = region.score(el, {"A": 0.25, "B": 0.25, "C": 0.25, "D": 0.25})
+    assert out["grade"].tolist()[:4] == [region.NODATA, region.NODATA, region.NEVER, region.NEVER]
+    assert pd.notna(out.loc[1, "score"])  # 점수가 있어도 거래 부족이면 데이터 부족
+    assert out.loc[4:, "grade"].isin([region.REC, region.CONSIDER, region.NOT]).all()
+    assert not (out["grade"] == region.NEVER).loc[~(out["r2"] | out["r3"])].any()  # 점수만으로 절대 불가 없음
 
 
 def test_labels_do_not_use_trades_before_t():

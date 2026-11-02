@@ -163,7 +163,7 @@ def summarize(sc: pd.DataFrame) -> dict:
         out |= {f"ic{h}_mean": ic.mean(), f"ic{h}_pos": (ic > 0).mean(), f"ic{h}_months": len(ic),
                 f"spread{h}": bt.spread(sc[sc[x].notna()], x)}  # fmt: skip
     share = sc["grade"].value_counts(normalize=True)
-    out |= {f"share_{g}": float(share.get(g, 0)) for g in region.GRADES}
+    out |= {f"share_{g}": float(share.get(g, 0)) for g in [*region.GRADES, region.NODATA]}
     out |= {f"rule_{r}": float(sc[r].mean()) for r in ("r1", "r2", "r3")}
     return out
 
@@ -184,6 +184,7 @@ def tune(force: bool) -> None:
     CONFIG.write_text(
         json.dumps(
             {"cand": pick, "weights": w, "weights_hash": weights_hash(w), "lgbm_params_hash": lgbm_hash,
+             "rule_version": region.RULE_VERSION,
              "rule": f"튜닝 T {PERIODS['tuning'][0]}~{PERIODS['tuning'][1]} 6개월 IC 평균 최대 (s0 와 {TIE} 이내면 s0)",
              "fixed_at": f"{datetime.now():%Y-%m-%d %H:%M}",
              "tuning_ic6_mean": round(float(res.loc[pick, "ic6_mean"]), 4)},
@@ -196,7 +197,8 @@ def tune(force: bool) -> None:
     for c, r in res.iterrows():
         with mlflow.start_run(run_name=f"score_{c}"):
             mlflow.set_tags({**tags, "kind": "score_candidate", "cand": c, "weights_hash": weights_hash(CANDIDATES[c]),
-                             "lgbm_params_hash": lgbm_hash, "chosen": str(c == pick)})  # fmt: skip
+                             "lgbm_params_hash": lgbm_hash, "chosen": str(c == pick),
+                             "rule_version": region.RULE_VERSION})  # fmt: skip
             mlflow.log_params(CANDIDATES[c])
             mlflow.log_metrics({k: float(v) for k, v in r.items() if k not in CANDIDATES[c] and pd.notna(v)})
     print(res.round(4).to_string())
@@ -285,6 +287,7 @@ def evaluate(force: bool) -> None:
 
     with mlflow.start_run(run_name=f"score_eval_{cfg['cand']}"):
         mlflow.set_tags({**tracking.common_tags("eval"), "kind": "score_eval", "weights_hash": cfg["weights_hash"],
+                         "rule_version": cfg["rule_version"],
                          "lgbm_params_hash": cfg["lgbm_params_hash"], "verdict": "pass" if ok else "fail"})  # fmt: skip
         mlflow.log_params(w)
         mlflow.log_metrics({k: float(v) for k, v in metrics.items() if pd.notna(v)})
@@ -324,15 +327,15 @@ def write_report(cfg, res, metrics, boots, rand, verdict, ok) -> None:
         f"선택 규칙 (튜닝 전에 정함): 6개월 IC 평균 최대, s0 와 {TIE} 이내면 s0 → **{cfg['cand']}** "
         f"(고정 {cfg['fixed_at']}, `config/score.json`)",
         "",
-        "| 후보 | wA | wB | wC | wD | IC 6개월 | 양수 달 (%) | IC 12개월 | 추천−아님 6개월 (%p) | 추천 (%) | 고려 (%) | 아님 (%) | 절대 불가 (%) |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| 후보 | wA | wB | wC | wD | IC 6개월 | 양수 달 (%) | IC 12개월 | 추천−아님 6개월 (%p) | 추천 (%) | 고려 (%) | 아님 (%) | 절대 불가 (%) | 데이터 부족 (%) |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for c, r in tune.iterrows():
         mark = " **(선택)**" if c == cfg["cand"] else ""
         lines.append(
             f"| {c}{mark} | {r['A']:.2f} | {r['B']:.2f} | {r['C']:.2f} | {r['D']:.2f} | {f2(r['ic6_mean'])} | "
             f"{r['ic6_pos'] * 100:.0f} | {f2(r['ic12_mean'])} | {pct(r['spread6'])} | "
-            + " | ".join(f"{r[f'share_{g}'] * 100:.1f}" for g in region.GRADES)
+            + " | ".join(f"{r[f'share_{g}'] * 100:.1f}" for g in [*region.GRADES, region.NODATA])
             + " |"
         )
     lines += ["", "튜닝 기간 등급별 (선택 설정)", "", *grade_lines(res["tuning"], 6), ""]
@@ -381,8 +384,9 @@ def write_report(cfg, res, metrics, boots, rand, verdict, ok) -> None:
     lines += group_lines(ev, ev["t"].str[:4], "연도")
     lines += group_lines(ev, ev["sgg_cd"].str[:2].map(sido), "시도")
     r = ev[["r1", "r2", "r3"]].mean() * 100
-    lines += ["### 절대 불가 규칙 해당 비율 (평가, 시군구-월 %)", "",
-              f"R1 데이터 부족 {r['r1']:.1f} · R2 거래 급감 + 하락 지속 {r['r2']:.1f} · R3 해제 급증 {r['r3']:.1f}", ""]  # fmt: skip
+    lines += ["### 규칙 해당 비율 (평가, 시군구-월 %)", "",
+              f"R1 데이터 부족 (등급 없음) {r['r1']:.1f} · 절대 불가: R2 거래 급감 + 하락 지속 {r['r2']:.1f} · "
+              f"R3 해제 급증 {r['r3']:.1f}", ""]  # fmt: skip
 
     ck = res["check"]
     lines += ["## 4. 확인 (T 2025.10~2026.8, 참고. 6개월 정답은 2026.1 까지)", "", *grade_lines(ck, 6), ""]

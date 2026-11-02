@@ -5,7 +5,7 @@
 - A 고점 대비 하락률 · C 3개월 추세: 조사 지수 (시군구, 없으면 시도 — trade_features.rone_by_sgg)
 - B 모델 예측가 대비 저평가: 중개거래 잔차 ln(실제가) − ln(예측가) 중위값을 건수로 0 쪽으로 당김
 - D 거래량 변화: log(최근 3개월 ÷ 전년 같은 기간)
-- 등급: 규칙 R1~R3 (매매 절대 불가) 먼저, 그다음 점수
+- 등급: R2·R3 (매매 절대 불가) 먼저, R1 은 등급 없이 "데이터 부족" (13장 조정 1회), 그다음 점수
 - 정답: 같은 단지·면적대의 W0(T~T+2) → W1(T+h~T+h+2) 가격 변화. 지금 기준 해제 아닌 거래로 계산 (평가용)
 """
 
@@ -25,6 +25,8 @@ CANCEL_MAX = 0.15  # R3
 GRADE_HI, GRADE_MID, C_MIN = 70, 50, 40
 REC, CONSIDER, NOT, NEVER = "매매 추천", "매매 고려", "매매 고려 대상 아님", "매매 절대 불가"
 GRADES = [REC, CONSIDER, NOT, NEVER]
+NODATA = "데이터 부족"  # 등급 아님: R1 (판단 불가). 4등급 밖에 따로 표시
+RULE_VERSION = "2"  # 1: R1~R3 → 절대 불가. 2: R1 → 데이터 부족 (PLAN 13장 튜닝 후 조정 1회, 2026-11-02)
 ELEMENTS = ["A", "B", "C", "D"]
 PAIR_MIN = 10  # 정답: 시군구 짝 최소
 CLIP = 0.5
@@ -99,10 +101,14 @@ def score(el: pd.DataFrame, weights: dict[str, float]) -> pd.DataFrame:
     out["r1"] = (out["n12"] < N12_MIN) | out["score"].isna()
     out["r2"] = (out["vol_ratio"] <= VOL_DROP) & out["down3"] & (out["C"] <= DROP_3M)
     out["r3"] = out["cancel_ratio"] > CANCEL_MAX
-    rule = out["r1"] | out["r2"] | out["r3"]
     out["grade"] = np.select(
-        [rule, (out["score"] >= GRADE_HI) & (out["P_C"] >= C_MIN), out["score"] >= GRADE_MID],
-        [NEVER, REC, CONSIDER],
+        [
+            out["r2"] | out["r3"],  # R1 과 겹쳐도 절대 불가 (R2·R3 는 B 없이 판정 가능)
+            out["r1"],
+            (out["score"] >= GRADE_HI) & (out["P_C"] >= C_MIN),
+            out["score"] >= GRADE_MID,
+        ],
+        [NEVER, NODATA, REC, CONSIDER],
         NOT,
     )
     return out

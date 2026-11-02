@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from realestate.score.region import CONSIDER, GRADES, NEVER, NOT, REC
+from realestate.score.region import CONSIDER, GRADES, NEVER, NODATA, NOT, REC
 
 IC_MIN_N = 20  # IC 를 계산하는 달의 최소 시군구 수
 
@@ -30,7 +30,7 @@ def grade_table(df: pd.DataFrame, h: int, grade: str = "grade") -> pd.DataFrame:
     x = f"X{h}"
     d = df[df[x].notna()]
     rows = []
-    for g in GRADES:
+    for g in [*GRADES, NODATA]:
         part = d[d[grade] == g]
         row = {
             "grade": g, "n": len(part), "x_mean": part[x].mean(), "x_median": part[x].median(),
@@ -49,10 +49,10 @@ def spread(df: pd.DataFrame, x: str, grade: str = "grade") -> float:
 
 
 def matched_grades(df: pd.DataFrame, col: str) -> pd.Series:
-    """다른 점수(col)로 매긴 등급: 달마다 절대 불가는 그대로 두고, 나머지를 col 순서로 원래 등급 수만큼 자름."""
+    """다른 점수(col)로 매긴 등급: 달마다 절대 불가·데이터 부족은 그대로 두고, 나머지를 col 순서로 원래 등급 수만큼 자름."""
     out = df["grade"].copy()
     for _, g in df.groupby("t"):
-        ok = g[g["grade"] != NEVER]
+        ok = g[~g["grade"].isin([NEVER, NODATA])]
         n_rec, n_con = (ok["grade"] == REC).sum(), (ok["grade"] == CONSIDER).sum()
         order = ok[col].rank(method="first", ascending=False)
         out.loc[ok.index] = np.where(order <= n_rec, REC, np.where(order <= n_rec + n_con, CONSIDER, NOT))
@@ -60,8 +60,8 @@ def matched_grades(df: pd.DataFrame, col: str) -> pd.Series:
 
 
 def random_spreads(df: pd.DataFrame, x: str, n: int = 1000, seed: int = 0) -> np.ndarray:
-    """같은 달 안에서 등급을 섞었을 때 (등급별 수 유지) 추천 − 고려 대상 아님 차이의 분포."""
-    d = df[df[x].notna()]
+    """같은 달 안에서 등급을 섞었을 때 (등급별 수 유지) 추천 − 고려 대상 아님 차이의 분포. 데이터 부족은 뺌."""
+    d = df[df[x].notna() & df["grade"].isin(GRADES)]
     rng = np.random.default_rng(seed)
     groups = [(g["grade"].to_numpy(), g[x].to_numpy()) for _, g in d.groupby("t")]
     out = np.empty(n)

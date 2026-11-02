@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from realestate.score import backtest as bt
-from realestate.score.region import CONSIDER, NEVER, NOT, REC
+from realestate.score.region import CONSIDER, NEVER, NODATA, NOT, REC
 
 
 def _panel(months: int = 12, n: int = 30, seed: int = 0) -> pd.DataFrame:
@@ -58,3 +58,15 @@ def test_bootstrap_on_perfect_signal():
 def test_random_spreads_center_near_zero():
     r = bt.random_spreads(_panel(), "X6", n=200)
     assert abs(np.median(r)) < 0.003 < bt.spread(_panel(), "X6")
+
+
+def test_nodata_kept_out_of_baselines_and_shown_in_table():
+    d = _panel()
+    d.loc[d["sgg_cd"] == "00001", "grade"] = NODATA
+    g = bt.matched_grades(d, "P_A")
+    assert (g[d["grade"] == NODATA] == NODATA).all()  # 다른 점수로 잘라도 데이터 부족은 그대로
+    assert not (g[d["grade"] != NODATA] == NODATA).any()
+    tbl = bt.grade_table(d, 6)
+    assert tbl.loc[NODATA, "n"] == 12 and tbl.loc[NEVER, "n"] == 12
+    d.loc[d["grade"] == NODATA, "X6"] = 100.0  # 섞기에 들어가면 차이가 크게 흔들림
+    assert np.abs(bt.random_spreads(d, "X6", n=100)).max() < 1

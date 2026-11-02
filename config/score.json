@@ -8,7 +8,8 @@
   },
   "weights_hash": "70153ab1bb",
   "lgbm_params_hash": "4e2023456b",
+  "rule_version": "2",
   "rule": "튜닝 T 202202~202304 6개월 IC 평균 최대 (s0 와 0.01 이내면 s0)",
-  "fixed_at": "2026-11-02 16:25",
+  "fixed_at": "2026-11-02 16:33",
   "tuning_ic6_mean": 0.2847
 }
