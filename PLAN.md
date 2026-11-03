@@ -74,7 +74,7 @@ database = "realestate_public"
 - **로컬 PC(8GB)** 에서 수집·정리·학습·점수 계산을 모두 합니다.
 - 결과 중 **작은 집계표만** TiDB Cloud에 올립니다.
 - **Streamlit Community Cloud** 는 TiDB의 집계표만 읽어서 보여줍니다. (API 키, 원본 데이터, 모델 학습은 클라우드에 안 올라감)
-- FastAPI + Docker + MLflow 는 로컬에서 돌리고, README에 실행 방법과 화면 캡처로 보여줍니다. (무료·배포 금지 조건)
+- FastAPI + MLflow 는 로컬에서 돌리고, README에 실행 방법과 화면 캡처로 보여줍니다. (무료·배포 금지 조건. Docker 는 v2)
 - TiDB 계정은 **쓰기용(로컬 `.env`)** 과 **읽기 전용(Streamlit Secrets)** 을 따로 씁니다. (4-1 참고)
 
 ```
@@ -83,7 +83,7 @@ database = "realestate_public"
                                                                   ├─▶ 학습/백테스트 (LightGBM, MLflow)
 [내가 입력: 호가, 경매, 권리 체크] ──────────────────────────────┤
                                                                   └─▶ 점수·등급 ──▶ TiDB 집계표 ──▶ Streamlit (공개)
-                                                FastAPI(+Docker): /predict /score /health (로컬)
+                                                FastAPI: /predict /region/{sgg_cd} /health (로컬)
 ```
 
 ---
@@ -99,7 +99,7 @@ database = "realestate_public"
 | 평가 / 백테스트 | | | ● walk-forward, 등급별 미래 수익률 | ○ 낙찰가율 비교(데이터 쌓이면) | ● 드리프트 모니터링 |
 | 추천 / 랭킹 | ○ 하락 지역 순위 | | ● 매매 4등급, 순위 지표(IC) | ● 입찰 4등급 | |
 | 데이터 파이프라인 | ● CSV 정리, 지역 매핑 | ● 백필·이어받기·해제 처리·ingest_log | | ● 온비드 수집, 지역 코드 매핑 | ● 스케줄 자동화 |
-| FastAPI + Docker + MLflow | | | ● MLflow 실험 기록 | ● FastAPI 점수 API | ● Docker 이미지, 모델 버전 관리 |
+| FastAPI + Docker + MLflow | | | ● MLflow 실험 기록 | ● FastAPI 예측·지역 API, Registry 모델 | (Docker 는 v2) |
 | AI 서비스 운영 | ● **첫 공개(Streamlit + TiDB 읽기 전용)** | ○ 실패 재시도·로그 | | | ● 모니터링, 재학습, 정식 공개 |
 
 ● = 핵심, ○ = 일부
@@ -109,7 +109,7 @@ database = "realestate_public"
 |---|---|---|---|
 | **MLflow** | **MVP 3** | 로컬 기록 저장소(`mlruns/`, SQLite) 설정. 모델 비교(LightGBM·XGBoost·기준선), 백테스트 실행마다 파라미터·지표·그래프 기록. 최종 모델을 Model Registry에 등록 | MVP 4: 호가 예측용 모델 등록 / v2: 재학습 자동 기록, `production` 별칭 |
 | **FastAPI** | **MVP 4** | `/health`, `/predict`(가격 예측), `/region/{sgg_cd}`(지역 등급 조회), 로컬 전용. MLflow Registry에서 모델 로드. pytest로 API 테스트 | v2: `/score/auction`, `/rights-check`, `/admin/pipeline-status` |
-| **Docker** | **MVP 5** | Docker Desktop 설치(내가 직접), 이미지 1개(Streamlit 앱 + FastAPI 실행용), `docker-compose.yml`. `.wslconfig`로 메모리 제한 | — |
+| **Docker** | **v2** (2026-11-03 범위 확정으로 MVP 5 에서 뺌) | 이미지 1개(Streamlit 앱 + FastAPI 실행용), `docker-compose.yml`, 빌드 확인. `.wslconfig`로 메모리 제한 | — |
 
 ※ MVP 1~2에는 세 도구가 들어가지 않습니다. (데이터·화면 먼저, 모델이 생긴 뒤 도입)
 
@@ -134,7 +134,7 @@ database = "realestate_public"
 일찍 한 번 공개해서 "실제로 웹에 떠 있는 포트폴리오"를 먼저 확보하고, 배포 문제를 초반에 잡습니다.
 
 - **Claude가 준비하는 것** (커밋까지만, push·가입·배포는 안 함)
-  1. `requirements.txt` (Streamlit Cloud용, 버전 고정), Python 3.12 지정
+  1. `requirements.txt` (Streamlit Cloud용, `uv export` 로 uv.lock 에서 만든 파생 파일, 직접 고치지 않음), Python 3.12 지정
   2. `.streamlit/secrets.toml.example` (읽기 전용 계정의 **칸 이름만**, 값 없음)
   3. TiDB 테이블 생성 SQL + 계정 2개 생성 SQL (4-1)
   4. R-ONE 집계표를 TiDB에 올리는 `scripts/publish.py` (쓰기 계정, `.env` 사용)
@@ -488,10 +488,10 @@ X_h(s,T) = R_h(s,T) − R_h(전국,T)                         초과 수익률 (
 | ~~분위수 모델~~ | — | 이번엔 안 함 (확정 4) |
 | 점수·정답·지표 | 256 시군구 × 약 56개월 | 수 분, 메모리 1GB 이하 (거래 단위 계산은 DuckDB 집계) |
 
-> **2026-11-03 범위 축소 (속성 코스)**: MVP 4 = 호가 입력 + FastAPI, MVP 5 = Docker + README + 앱 공개만.
+> **2026-11-03 범위 축소 (속성 코스)**: MVP 4 = 호가 입력 + FastAPI, MVP 5 = README + 앱 공개만 (**범위 최종 확정 2026-11-03**: Docker 는 v2 로 옮김).
 > 온비드 공매, 단지 단위 등급, 스케줄·재학습·모니터링은 아래 **"v2 계획"** 으로 옮김. 1·8·10장의 공매 관련 내용은 v2 기준으로 읽음.
 
-### MVP 4 — 호가 입력 + FastAPI
+### MVP 4 — 호가 입력 + FastAPI ✅ 완료 (2026-11-03, 커밋 fded2a2)
 - **목표**: 단지·면적·층·호가를 넣으면 모델 적정가와 호가 차이, 오차 범위, 그 시군구의 지역 등급을 보여 준다 (단지·개별 단위는 검증 안 한 참고 정보, 등급 없음).
 - **만드는 것**
   - 호가 입력 화면: 시도 → 시군구 → 단지, 전용면적, 층, 호가(만 원) → 모델 적정가, 차이(%), "모델 대비 높음 / 비슷 / 낮음", 오차 범위(평가 기간 실제 오차 분포), 지역 등급. 입력값은 저장 안 함 (세션 안에서만)
@@ -506,16 +506,19 @@ X_h(s,T) = R_h(s,T) − R_h(전국,T)                         초과 수익률 (
     - 공개 단지 ID `c_` + 10자리 (내부 단지 해시를 한 번 더 해시). `complex_price` 도 같은 ID
     - API `/predict` 는 입력한 면적·층 그대로 계산 (같은 모델·같은 피처 SQL, 표의 칸과 같은 입력이면 같은 값 — 테스트)
 - **완료 기준**: 호가 화면이 TiDB(web_ro)로 동작, FastAPI 테스트 통과, `/docs` 화면 캡처, 화면·API 결과가 같은 입력에서 일치
+  - 결과: web_ro 로 화면 7 동작, 테스트 117개 통과, 표·API 같은 입력 일치 테스트 통과. `/docs` 캡처는 MVP 5 README 캡처(`docs/images/`)와 함께
 - **"추천" 단어 안 씀**: 호가 화면·API 출력 문구에는 쓰지 않음 (지역 등급 이름은 고정 이름 그대로 표시)
 
-### MVP 5 — Docker + README + 앱 공개
+### MVP 5 — README + 앱 공개
 - **목표**: 남이 받아서 실행해 볼 수 있고, 공개 앱을 볼 수 있는 상태로 만든다.
 - **만드는 것**
-  - **Docker**: 이미지 1개 (Streamlit 앱 + FastAPI 실행용, `docker compose up` 으로 둘 다). 데이터는 이미지에 넣지 않고 TiDB(읽기 전용) 또는 로컬 `data/public` 마운트. `.wslconfig` 메모리 제한 (Docker Desktop 설치는 내가 직접)
-  - README 완성 (12장 목차), 화면 캡처
+  - README 완성 (12장 목차), 화면 캡처 (`docs/images/`)
   - 앱 공개: Streamlit Community Cloud (배포 버튼은 내가 직접), 배포 전 비밀값·커밋 기록 검사
-- **완료 기준**: `docker compose up` 으로 앱·API 동작, README 실행 방법대로 재현, 공개 앱 주소
-- **소요**: 3~5일
+- **의존성은 uv 로만 관리**: `pyproject.toml` + `uv.lock` 이 기준. 설치·실행은 `uv sync` · `uv run`.
+  `requirements.txt` 는 Streamlit Cloud 용으로 `uv export --no-dev --no-hashes --no-emit-project -o requirements.txt` 로 만든 파생 파일 (직접 고치지 않음)
+- **완료 기준**: README 실행 방법대로 새 폴더에서 `uv sync` → 앱·API·테스트 재현, 공개 앱 주소
+- **소요**: 2~3일
+- Docker(Dockerfile, compose, 빌드 확인)는 v2-4 로 옮김 (2026-11-03 범위 최종 확정)
 
 ---
 
@@ -538,6 +541,11 @@ MVP 4·5 에서 뺀 것. 내용은 지금 계획(6-2, 8-2, 9장 공매, 10장 �
 - Windows 작업 스케줄러: 매일 수집, 매월(또는 분기) 재학습·점수·TiDB 자동 업로드
 - 모니터링: 수집 성공률, 건수 이상, 모델 오차 추이, 피처 분포 변화(PSI), 데이터·모델 상태 화면
 - MLflow `production` 별칭 → FastAPI·점수 계산이 그 버전을 사용
+
+### v2-4. Docker (기존 MVP 5)
+- 이미지 1개 (Streamlit 앱 + FastAPI 실행용), `docker-compose.yml` 로 둘 다 실행, 빌드 확인
+- 데이터는 이미지에 넣지 않고 TiDB(읽기 전용) 또는 로컬 `data/public` 마운트. `.wslconfig` 메모리 제한 (Docker Desktop 설치는 내가 직접)
+- 이미지 안 의존성도 `uv.lock` 기준 (`uv sync --frozen`)
 
 **총 예상**: MVP 4·5 합 약 1~2주 (속성 코스, 2026-11-03). v2 는 별도
 
@@ -589,7 +597,7 @@ realestate-ml/
 ├─ app/                  # Streamlit: Home.py, pages/
 ├─ scripts/              # backfill.py, daily.py, train.py, publish.py
 ├─ scheduler/            # 작업 스케줄러 등록용 .bat / .xml
-├─ docker/               # Dockerfile, docker-compose.yml
+├─ docker/               # (v2) Dockerfile, docker-compose.yml
 ├─ tests/
 ├─ notebooks/            # 탐색용 (결과는 src로 옮김)
 └─ mlruns/               # MLflow 로컬 기록 (git 제외)
@@ -604,7 +612,7 @@ realestate-ml/
 | **LightGBM (주력), XGBoost (비교)** | CPU만으로 빠름, 표 데이터 강자, 메모리 효율(히스토그램 방식). 딥러닝은 안 씀 |
 | **MLflow (로컬 파일/SQLite)** | 서버 비용 0, 실험·모델 버전 관리 |
 | **FastAPI** | 점수 API, 자동 문서(/docs) |
-| **Docker** | 재현성 증명용. 평소 개발은 Docker 없이 (8GB 부담) |
+| **Docker** | v2. 재현성 증명용. 평소 개발은 Docker 없이 (8GB 부담) |
 | **TiDB Cloud Starter** | MySQL 호환 무료 DB. 공개 화면용 집계표만 저장 |
 | **Streamlit Community Cloud** | 무료 공개. TiDB 읽기 전용 계정만 사용 (4-1) |
 | httpx + tenacity | API 호출, 재시도 |
@@ -618,7 +626,7 @@ realestate-ml/
 | 정리·집계 | 358만 행 × 약 30열 | DuckDB가 디스크에서 바로 집계(`memory_limit='2GB'`) — pandas로 한 번에 안 올림 |
 | 학습 | 최대 약 300만 행 × 약 30피처 × float32 ≈ 0.4GB (자세한 근거 MVP 3-9) | 필요한 열만 float32/category로 로드, 부족하면 최근 N년 또는 샘플링. LightGBM 데이터셋은 원본보다 작음 |
 | 백테스트 | 학습 약 220회 (튜닝 90 + 평가 84 + 확인 44 + 최종 3, MVP 3-7) | 모델 크기 작게(트리 수 제한), 결과만 저장, 한 번에 한 시점 |
-| Docker Desktop | WSL2가 2GB 이상 사용 | `.wslconfig`로 3GB 제한, 필요할 때만 켬 |
+| Docker Desktop (v2) | WSL2가 2GB 이상 사용 | `.wslconfig`로 3GB 제한, 필요할 때만 켬 |
 | Streamlit Cloud | 약 1GB 수준 메모리(확인 필요) | 집계표만 읽음, `st.cache_data`로 캐시 |
 
 ### 4-1. TiDB 계정 분리와 비밀값 관리
@@ -1075,9 +1083,9 @@ E점수 = 할인율 0% → 0점, 40% 이상 → 100점 (선형)
 7. 모델링: 피처, 모델 비교(LightGBM vs XGBoost vs 기준선), 시점 누수 방지
 8. 점수·등급 설계와 규칙 조건
 9. 백테스트 방법과 결과, 한계
-10. 서빙·운영: FastAPI, Docker, MLflow, 스케줄, 모니터링
+10. 서빙·운영: FastAPI, MLflow (Docker·스케줄·모니터링은 v2)
 11. 8GB·무료 환경에서의 설계 선택
-12. 실행 방법 (uv, .env.example, docker compose)
+12. 실행 방법 (uv, .env.example)
 13. 폴더 구조
 14. 회고: 어려웠던 점, 다음에 할 것
 15. 출처·라이선스·면책 (위 출처 문구 그대로 + "공공 자료를 가공한 것이며 투자 조언이 아닙니다")
