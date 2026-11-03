@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 
 import common
+from realestate.score import explain
 
 st.set_page_config(page_title="지역 점수·등급", page_icon="🏷️", layout="wide")
 st.title("지역 점수·등급")
@@ -42,26 +43,8 @@ for col, g in zip(cols, GRADES, strict=True):
     }.get(g)
     col.metric(g, f"{int(counts.get(g, 0)):,}곳", help=help_, label_visibility="collapsed")
 
-FACTORS = {"p_a": "고점 대비 하락", "p_b": "모델 저평가", "p_c": "3개월 추세", "p_d": "거래량 변화"}
-
-
-def reason(r: pd.Series) -> str:
-    """등급이 나온 이유 한 줄 (등급 규칙 그대로 + 가장 높은·낮은 요소)."""
-    g = r["grade"]
-    if g in ("매매 절대 불가", "데이터 부족"):
-        return common.rule_text(g, r["rule_flags"])
-    s, pc = r["score"], r["p_c"]
-    if g == "매매 추천":
-        head = f"점수 {s:.0f} (70 이상), 추세 백분위 {pc:.0f} (40 이상)"
-    elif g == "매매 고려" and s >= 70:
-        head = f"점수 {s:.0f} 이지만 추세 백분위 {pc:.0f} (40 미만)"
-    elif g == "매매 고려":
-        head = f"점수 {s:.0f} (50~70)"
-    else:
-        head = f"점수 {s:.0f} (50 미만)"
-    p = r[list(FACTORS)].astype(float)
-    hi, lo = p.idxmax(), p.idxmin()
-    return f"{head} · 높음: {FACTORS[hi]} {p[hi]:.0f} · 낮음: {FACTORS[lo]} {p[lo]:.0f}"
+FACTORS = explain.FACTORS
+reason = explain.reason  # 등급이 나온 이유 한 줄 (API /region 과 같은 함수)
 
 
 order = {g: i for i, g in enumerate(GRADES)}

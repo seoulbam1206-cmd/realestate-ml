@@ -10,12 +10,15 @@ from realestate.config import RONE_CLEAN
 
 APP = Path(__file__).resolve().parents[1] / "app"
 PAGES = [APP / "Home.py", *sorted((APP / "pages").glob("*.py"))]
-DISCLAIMER_PAGES = {"2_하락_지역_순위.py", "4_지역_점수_등급.py", "5_백테스트_성적표.py", "6_단지_시세.py"}
+DISCLAIMER_PAGES = {
+    "2_하락_지역_순위.py", "4_지역_점수_등급.py", "5_백테스트_성적표.py", "6_단지_시세.py", "7_호가_비교.py"
+}  # fmt: skip
 MVP3_PAGES = {
     "3_실거래_집계.py",
     "4_지역_점수_등급.py",
     "5_백테스트_성적표.py",
     "6_단지_시세.py",
+    "7_호가_비교.py",
 }  # 실거래·점수 화면: 투자 권유 아님 문구
 PUBLIC_DIR = Path(__file__).resolve().parents[1] / "data" / "public"
 
@@ -69,6 +72,8 @@ def test_page_runs_without_error(page):
         pytest.skip("build_public.py 를 먼저 실행")
     if page.name == "6_단지_시세.py" and not (PUBLIC_DIR / "complex_price.parquet").exists():
         pytest.skip("build_complex_price.py 를 먼저 실행")
+    if page.name == "7_호가_비교.py" and not (PUBLIC_DIR / "fair_price.parquet").exists():
+        pytest.skip("build_fair_price.py grid 를 먼저 실행")
     at = AppTest.from_file(str(page), default_timeout=60).run()
     assert not at.exception, at.exception
     captions = " ".join(c.value for c in at.caption)
@@ -82,16 +87,42 @@ def test_page_runs_without_error(page):
     if page.name in {"4_지역_점수_등급.py", "5_백테스트_성적표.py"}:
         assert "권역 안 IC가 0과 구분되지 않음" in shown
         assert "검증 안 됨" in shown
-    if page.name in {"3_실거래_집계.py", "4_지역_점수_등급.py", "5_백테스트_성적표.py", "6_단지_시세.py"}:
+    if page.name in {
+        "3_실거래_집계.py",
+        "4_지역_점수_등급.py",
+        "5_백테스트_성적표.py",
+        "6_단지_시세.py",
+        "7_호가_비교.py",
+    }:
         assert "이 화면에서 볼 수 있는 것" in shown
     if page.name == "6_단지_시세.py":
         assert "단지 단위는 검증하지 않은 참고 정보입니다." in shown
         assert "추천" not in " ".join(str(e.value) for e in at.markdown)
 
+    if page.name == "7_호가_비교.py":
+        assert "단지·개별 단위는 검증하지 않은 참고 정보입니다." in shown
+        heads = " ".join(str(e.value) for e in at.subheader)
+        assert "지역 등급(시군구 단위)" in heads
+        assert "2026년 10월 기준 적정가" in heads
+        assert "권역 안 IC가 0과 구분되지 않음" in shown
+        at.number_input[1].set_value(300000).run()  # 호가 입력 → 판정
+        assert not at.exception, at.exception
+        assert any(
+            x in " ".join(str(e.value) for e in at.markdown) for x in ("모델 대비 높음", "모델과 비슷")
+        )
 
-def test_complex_page_never_says_recommend():
-    src = (APP / "pages" / "6_단지_시세.py").read_text(encoding="utf-8")
+
+@pytest.mark.parametrize("name", ["6_단지_시세.py", "7_호가_비교.py"])
+def test_complex_pages_never_say_recommend(name):
+    src = (APP / "pages" / name).read_text(encoding="utf-8")
     assert "추천" not in src
+
+
+def test_region_note_same_as_api():
+    import common
+    from realestate.score import explain
+
+    assert common.REGION_NOTE == explain.REGION_NOTE
 
 
 def test_grade_colors_cover_all_grades():

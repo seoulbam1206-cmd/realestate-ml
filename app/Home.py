@@ -50,6 +50,11 @@ st.page_link(
     label="단지 시세 — 단지별 최근 12개월 실거래 중위가와 모델 적정가 (정보용, 등급 없음)",
     icon="🏢",
 )
+st.page_link(
+    "pages/7_호가_비교.py",
+    label="호가 비교 — 단지·면적·층·호가를 넣으면 모델 적정가와 차이 (참고 정보, 등급 없음)",
+    icon="🧮",
+)
 st.page_link("pages/9_출처_안내.py", label="출처 · 안내 — 데이터 출처, 지수 설명, 면책", icon="📄")
 
 with st.expander("데이터 정보"):

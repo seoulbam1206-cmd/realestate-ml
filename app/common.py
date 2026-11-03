@@ -33,7 +33,7 @@ INVEST_NOTE = "투자 권유가 아닙니다. 공공 데이터 기반 분석 결
 REGION_NOTE = (
     "이 점수는 권역(수도권/지방) 흐름을 반영합니다. 같은 권역 안 지역 비교 근거로 쓰기 어렵습니다"
     "(평가 기간 권역 안 IC가 0과 구분되지 않음)."
-)
+)  # API 와 같은 문구: realestate.score.explain.REGION_NOTE (테스트로 확인)
 UNVERIFIED = "검증 안 됨"
 PROVISIONAL_NOTE = "신고 기한(계약 후 30일) 때문에 거래 수가 아직 덜 잡혔을 수 있음"
 PROVISIONAL_MONTHS = 2  # 실거래 집계에서 잠정으로 표시할 최근 달 수
@@ -143,6 +143,47 @@ def load_public(name: str) -> tuple[pd.DataFrame, str]:
     return df, backend
 
 
+FAIR_COLS = (
+    "complex_id, sgg_cd, umd_nm, apt_nm, build_year, area_m2, floor_band, floor_rep, fair_price, fair_ppm2, "
+    "hist_group, range_low, range_high, target_ym, model_anchor"
+)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fair_local() -> pd.DataFrame:
+    path = PUBLIC_DIR / "fair_price.parquet"
+    if not path.exists():
+        st.error("적정가 표가 없습니다. 먼저 `uv run python scripts/build_fair_price.py grid` 를 실행하세요.")
+        st.stop()
+    return pd.read_parquet(path)
+
+
+@st.cache_data(ttl=3600, show_spinner="데이터 불러오는 중…")
+def load_fair(sgg_cd: str | None = None, complex_id: str | None = None) -> tuple[pd.DataFrame, str]:
+    """적정가 표 (fair_price) 일부: 시군구 단위 단지 목록용 또는 단지 하나. 표 전체(약 40만 행)는 읽지 않음."""
+    if _tidb_secrets():
+        if complex_id is not None:
+            sql, params = f"SELECT {FAIR_COLS} FROM fair_price WHERE complex_id = %(v)s", {"v": complex_id}
+        else:
+            sql = (
+                "SELECT DISTINCT complex_id, sgg_cd, umd_nm, apt_nm, build_year "
+                "FROM fair_price WHERE sgg_cd = %(v)s"
+            )
+            params = {"v": sgg_cd}
+        df = pd.read_sql(sql, _ro_engine(), params=params)
+        backend = "TiDB (읽기 전용)"
+    else:
+        full = _fair_local()
+        if complex_id is not None:
+            df = full[full["complex_id"] == complex_id]
+        else:
+            df = full.loc[
+                full["sgg_cd"] == sgg_cd, ["complex_id", "sgg_cd", "umd_nm", "apt_nm", "build_year"]
+            ].drop_duplicates()
+        backend = "로컬 Parquet"
+    return df.reset_index(drop=True), backend
+
+
 PUBLIC_TABLES = (
     "region_name",
     "agg_region_month",
@@ -217,11 +258,9 @@ def grade_badge(grade: str, text: str | None = None) -> str:
 
 def rule_text(grade: str, flags: str) -> str:
     """등급 옆에 붙는 규칙 설명: 절대 불가면 걸린 규칙 이름 (검증 안 됨), 데이터 부족이면 안내."""
-    if grade == "데이터 부족":
-        return NODATA_NOTE
-    if grade == "매매 절대 불가":
-        return " · ".join(RULE_LABEL[f] for f in flags.split(",") if f)
-    return ""
+    from realestate.score import explain
+
+    return explain.rule_text(grade, flags)
 
 
 def banner() -> None:

@@ -18,6 +18,8 @@ dependencies = [
     "lightgbm>=4.7.0",
     "mlflow>=3.17.2",
     "psutil>=7.2.2",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
 ]
 
 [dependency-groups]

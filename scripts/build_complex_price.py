@@ -2,7 +2,7 @@
 
 | 열 | 내용 |
 |---|---|
-| row_id | 행 번호 (같은 동에 이름이 같은 단지가 있어 키로 씀. 단지 식별 해시는 올리지 않음) |
+| complex_id | 공개 단지 ID `c_` + 10자리 (내부 단지 해시를 한 번 더 해시, 적정가 표 fair_price 와 같은 ID. 내부 키는 올리지 않음) |
 | sgg_cd, umd_nm, apt_nm | 시군구 코드, 법정동 이름, 단지명 (complex_map) |
 | build_year | 건축년도 (창 안 거래의 최빈값, 같은 동·같은 이름 단지 구분용) |
 | trade_cnt | 최근 12개월 정상 거래 수 (지금 기준 해제 아님) |
@@ -31,6 +31,7 @@ import pandas as pd
 
 from realestate.config import APT_TRADE_CLEAN, REFERENCE_CLEAN, ROOT
 from realestate.models.periods import FEATURE_DIR
+from realestate.models.serve import public_complex_id
 
 OUT = ROOT / "data" / "public" / "complex_price.parquet"
 LGBM_CONFIG = ROOT / "config" / "lgbm.json"
@@ -96,8 +97,9 @@ def main() -> None:
     df.loc[few, ["median_ppm2", "model_ppm2", "gap_pct"]] = np.nan
     first, last = (pd.Timestamp(f"{m[:4]}-{m[4:]}-01").date() for m in (window[0], window[-1]))
     out = (
-        df.assign(window_from=first, window_to=last)[
+        df.assign(window_from=first, window_to=last, complex_id=df["complex_key"].map(public_complex_id))[
             [
+                "complex_id",
                 "sgg_cd",
                 "umd_nm",
                 "apt_nm",
@@ -119,9 +121,7 @@ def main() -> None:
         f"건축년도 없는 단지 {out['build_year'].isna().sum():,} · (시군구·동·이름·건축년도) 중복 "
         f"{out.duplicated(['sgg_cd', 'umd_nm', 'apt_nm', 'build_year']).sum():,}"
     )
-    out.insert(
-        0, "row_id", np.arange(1, len(out) + 1, dtype="int32")
-    )  # 같은 동에 같은 이름 단지가 있어 키로 씀
+    assert out["complex_id"].is_unique, "공개 ID 충돌"
     OUT.parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(OUT, index=False)
     print(

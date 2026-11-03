@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS bt_meta (
 );
 
 CREATE TABLE IF NOT EXISTS complex_price (
-    row_id       INT          NOT NULL PRIMARY KEY,
+    complex_id   CHAR(12)     NOT NULL PRIMARY KEY,
     sgg_cd       CHAR(5)      NOT NULL,
     umd_nm       VARCHAR(20)  NOT NULL,
     apt_nm       VARCHAR(80)  NOT NULL,
@@ -128,5 +128,26 @@ CREATE TABLE IF NOT EXISTS complex_price (
     gap_pct      DOUBLE       NULL,
     window_from  DATE         NOT NULL,
     window_to    DATE         NOT NULL,
+    KEY idx_sgg (sgg_cd)
+);
+
+-- 호가 비교용 적정가 표 (scripts/build_fair_price.py grid). 단지 × 면적 타입 × 층 구간, 모델 출력만
+CREATE TABLE IF NOT EXISTS fair_price (
+    complex_id   CHAR(12)     NOT NULL,
+    sgg_cd       CHAR(5)      NOT NULL,
+    umd_nm       VARCHAR(20)  NOT NULL,
+    apt_nm       VARCHAR(80)  NOT NULL,
+    build_year   SMALLINT     NULL,
+    area_m2      DOUBLE       NOT NULL,
+    floor_band   VARCHAR(10)  NOT NULL,
+    floor_rep    SMALLINT     NOT NULL,
+    fair_price   BIGINT       NOT NULL,
+    fair_ppm2    DOUBLE       NOT NULL,
+    hist_group   VARCHAR(10)  NOT NULL,
+    range_low    BIGINT       NOT NULL,
+    range_high   BIGINT       NOT NULL,
+    target_ym    DATE         NOT NULL,
+    model_anchor DATE         NOT NULL,
+    PRIMARY KEY (complex_id, area_m2, floor_band),
     KEY idx_sgg (sgg_cd)
 );

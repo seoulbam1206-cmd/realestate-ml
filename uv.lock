@@ -1338,6 +1338,7 @@ source = { editable = "." }
 dependencies = [
     { name = "certifi" },
     { name = "duckdb" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "lightgbm" },
     { name = "mlflow" },
@@ -1350,6 +1351,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlalchemy" },
     { name = "streamlit" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -1362,6 +1364,7 @@ dev = [
 requires-dist = [
     { name = "certifi", specifier = ">=2024.8" },
     { name = "duckdb", specifier = ">=1.1" },
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "lightgbm", specifier = ">=4.7.0" },
     { name = "mlflow", specifier = ">=3.17.2" },
@@ -1374,6 +1377,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "streamlit", specifier = ">=1.40" },
+    { name = "uvicorn", specifier = ">=0.32" },
 ]
 
 [package.metadata.requires-dev]
