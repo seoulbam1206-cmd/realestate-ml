@@ -39,3 +39,8 @@ logs/
 data/models/
 data/score/
 data/public/
+
+# 데이터·DB 파일 전체 (보강)
+data/
+*.db
+*.sqlite*
