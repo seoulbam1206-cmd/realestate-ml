@@ -33,6 +33,7 @@ REPORTS = ROOT / "reports"
 AGG_OUT = DATA_CLEAN / "agg" / "agg_region_month.parquet"
 MAP_OUT = REFERENCE_CLEAN / "region_map.parquet"
 BASE_YM = "202606"
+MIN_N_PRICE = 5  # 공개 자료 규칙: 거래가 이보다 적은 칸은 중위가를 비운다 (CLAUDE.md)
 SIDO = {  # R-ONE 시도 이름 → (시군구 코드 앞 2자리, 법정동 시도 이름)
     "서울": ("11", "서울특별시"), "부산": ("26", "부산광역시"), "대구": ("27", "대구광역시"),
     "인천": ("28", "인천광역시"), "대전": ("30", "대전광역시"), "울산": ("31", "울산광역시"),
@@ -265,7 +266,9 @@ def write_html(s: pd.DataFrame, regions: pd.DataFrame, summ: pd.DataFrame, parti
             "survey": [_num(v) for v in g["survey"]] if "survey" in g else [],
             "real": [_num(v) for v in g["real"]] if "real" in g else [],
             "n": [None if pd.isna(v) else int(v) for v in g["n"]],
-            "med": [_num(v) for v in g["med"]],
+            "med": [
+                None if pd.isna(n) or n < MIN_N_PRICE else _num(v) for n, v in zip(g["n"], g["med"])
+            ],
             "corr_survey": _num(corr.loc[key, "corr_survey"]),
             "corr_real": _num(corr.loc[key, "corr_real"]),
             "corr_raw": _num(corr.loc[key, "corr_raw"]),

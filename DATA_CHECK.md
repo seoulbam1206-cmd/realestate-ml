@@ -21,9 +21,8 @@ realestate-ml/
 | 항목 | 상태 |
 |---|---|
 | RAM | 7.7 GB |
-| D: 여유 공간 | 약 877 GB |
-| Python | 3.12 (`D:\Python312`), uv 설치됨 (CPython 3.14도 있음) |
-| 주의 | 지금 `python` 명령이 **다른 프로젝트(ai-ocr-pipeline)의 venv**를 가리킴 → 이 프로젝트는 별도 venv 필요 |
+| Python | 3.12, uv 설치됨 |
+| 주의 | 기본 `python` 명령이 **다른 프로젝트의 venv**를 가리킴 → 이 프로젝트는 별도 venv 필요 |
 | git | 있음 |
 | Docker | **없음** (MVP 5 전에 Docker Desktop 설치 필요) |
 | DuckDB | 없음 (Python 패키지로 설치 예정, 별도 프로그램 불필요) |

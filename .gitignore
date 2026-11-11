@@ -44,3 +44,11 @@ data/public/
 data/
 *.db
 *.sqlite*
+
+# 모델 파일 (어느 폴더에 저장해도 제외)
+*.lgb
+*.pkl
+*.joblib
+
+# 개인 학습 메모 (.git/info/exclude 에서 옮김)
+docs/STUDY_GUIDE.md
