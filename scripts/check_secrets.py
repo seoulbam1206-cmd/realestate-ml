@@ -68,7 +68,10 @@ def main() -> int:
         read = lambda f: (ROOT / f).read_bytes()  # noqa: E731
     else:
         files = git("diff", "--cached", "--name-only", "--diff-filter=ACM").splitlines()
-        read = lambda f: git("show", f":{f}").encode("utf-8", "replace")  # noqa: E731
+        # 바이트로 읽는다: 이미지 같은 바이너리 파일을 utf-8 텍스트로 읽으면 실패하므로
+        read = lambda f: subprocess.run(  # noqa: E731
+            ["git", "show", f":{f}"], cwd=ROOT, capture_output=True, check=True
+        ).stdout
 
     for f in files:
         if any(p.search(f) for p in FORBIDDEN_PATHS):
