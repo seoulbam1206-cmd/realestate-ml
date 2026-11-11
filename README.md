@@ -6,8 +6,8 @@
 
 | 지역 점수·등급 | 백테스트 성적표 | 호가 비교 |
 |---|---|---|
-| ![지역 점수](docs/images/region_score.png) | ![백테스트](docs/images/backtest.png) | ![호가 비교](docs/images/quote_compare.png) |
-<!-- 캡처 자리: docs/images/ (region_score.png, backtest.png, quote_compare.png, complex_price.png, api_docs.png) -->
+| ![지역 점수](docs/images/region_score.jpg) | ![백테스트](docs/images/backtest.jpg) | ![호가 비교](docs/images/quote_compare.jpg) |
+<!-- 캡처 자리: docs/images/ (region_score.jpg, backtest.jpg, quote_compare.jpg, complex_price.png, api_docs.png) -->
 
 > **투자 권유가 아닙니다.** 공공 데이터를 가공한 개인 포트폴리오용 분석 결과이며, 정확성을 보장하지 않습니다.
 
